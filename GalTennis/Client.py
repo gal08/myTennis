@@ -28,6 +28,24 @@ def send_request(command, username, password, is_admin=0):
         print("Server response:", response)
 
 
+def signup():
+    role = input("Choose user type (regular / admin): ").strip().lower()
+    if role == "admin":
+        admin_pass = input("Enter admin signup password: ").strip()
+        if admin_pass == "secret123":  # Admin signup password
+            is_admin = 1
+        else:
+            print("Incorrect admin password. You will be login as regular user.")
+
+    username = input("Username: ").strip()
+    password = input("Password: ").strip()
+    vaild_password = input("enter your password again: ").strip()
+    if(password == vaild_password):
+        list = [username, password]
+        return list
+    return []
+
+
 def main():
     """
     Main function that asks the user to choose between SIGNUP and LOGIN,
@@ -46,17 +64,13 @@ def main():
 
     # If the user chooses to sign up, ask for user type
     if choice == "SIGNUP":
-        role = input("Choose user type (regular / admin): ").strip().lower()
-        if role == "admin":
-            admin_pass = input("Enter admin signup password: ").strip()
-            if admin_pass == "secret123":  # Admin signup password
-                is_admin = 1
-            else:
-                print("Incorrect admin password. You will be signed up as regular user.")
-
-    # Ask for username and password
-    username = input("Username: ").strip()
-    password = input("Password: ").strip()
+        details = signup()
+        username = details[0]
+        password = details[1]
+    else:
+        # Ask for username and password
+        username = input("Username: ").strip()
+        password = input("Password: ").strip()
 
     # Send the request to the server
     send_request(choice, username, password, is_admin)
