@@ -1,86 +1,91 @@
-import socket  # For TCP communication with the server
 import requests
-# Server connection details
+
 BASE_URL = "http://127.0.0.1:5000/"
-
-
-"""def send_request(command, username, password, is_admin=0):
-    Connects to the server and sends a command with username, password, and admin flag.
-    Prints the response received from the server.
-    # Create a TCP socket
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        # Connect to the server
-        sock.connect((IP, PORT))
-
-        # Build the message to send (e.g. "SIGNUP alice Pass123 0")
-        message = f"{command} {username} {password} {is_admin}"
-
-        # Send the message as bytes
-        sock.send(message.encode())
-
-        # Receive the server's response
-        response = sock.recv(1024).decode()
-
-        # Display the server's reply
-        print("Server response:", response)
-"""
-
 
 def signup():
     role = input("Choose user type (regular / admin): ").strip().lower()
+    is_admin = 0
     if role == "admin":
         admin_pass = input("Enter admin signup password: ").strip()
         if admin_pass == "secret123":  # Admin signup password
             is_admin = 1
         else:
-            print("Incorrect admin password. You will be login as regular user.")
+            print("Incorrect admin password. You will be logged in as regular user.")
 
     username = input("Username: ").strip()
     password = input("Password: ").strip()
-    vaild_password = input("enter your password again: ").strip()
-    if(password == vaild_password):
-        list = [username, password]
-        return list
-    return []
+    valid_password = input("Enter your password again: ").strip()
+    if password == valid_password:
+        return username, password, is_admin
+    return None, None, None
+
+
+def upload_video(username, password):
+    print("\nEnter video details to upload:")
+    title = input("Title: ").strip()
+    category = input("Category: ").strip()
+    level = input("Level: ").strip()
+
+    video_data = {
+        "username": username,
+        "password": password,
+        "title": title,
+        "category": category,
+        "level": level
+    }
+
+    res = requests.post(BASE_URL + "/api/videos", json=video_data)
+    print("Upload response:", res.json())
+
+def check_admin(username_to_check, users):
+    for user in users:
+        if user["username"] == username_to_check:
+            return user["is_admin"]
+    return None
+
 
 def main():
-    """
-    Main function that asks the user to choose between SIGNUP and LOGIN,
-    collects credentials, and sends the request.
-    If SIGNUP is chosen, user is also asked to choose between regular and admin user.
-    """
     print("Welcome! Choose: signup / login")
     choice = input("Your choice: ").strip().upper()
 
-    # Validate user choice
     if choice not in ["SIGNUP", "LOGIN"]:
         print("Invalid choice")
         return
 
-    is_admin = 0  # Default: regular user
     res = requests.get(BASE_URL + "/")
     print("Server says:", res.text)
 
-    # If the user chooses to sign up, ask for user type
     if choice == "SIGNUP":
-        details = signup()
+        username, password, is_admin = signup()
+        if not username:
+            print("Signup failed – passwords didn't match")
+            return
+
         new_user = {
-            "username": details[0],
-            "password": details[1]
+            "username": username,
+            "password": password,
+            "is_admin": is_admin
         }
-        res = requests.post(BASE_URL + "/register", json=new_user)
+        res = requests.post(BASE_URL + "/api/register", json=new_user)
         print("Register:", res.json())
 
-        res = requests.get(BASE_URL + "/users")
+        res = requests.get(BASE_URL + "/api/users")
         print("Users:", res.json())
-    else:
-        # Ask for username and password
+
+    elif choice == "LOGIN":
         username = input("Username: ").strip()
         password = input("Password: ").strip()
 
-    # Send the request to the server
-    """send_request(choice, username, password, is_admin)"""
+        login_data = {"username": username, "password": password}
+        res = requests.post(BASE_URL + "/api/login", json=login_data)
+        print("Login:", res.json())
+        res = requests.get(BASE_URL + "/api/users")
+        print("Users:", res.json())
 
-# Start the client program
+    data = res.json()
+    if "error" not in data & check_admin(username, res):
+        upload_video(username, password)
+
+
 if __name__ == "__main__":
     main()
