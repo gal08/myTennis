@@ -15,6 +15,20 @@ def home():
     return "Server is running OK ✅"
 
 
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT username, password, is_admin FROM users")
+    rows = cursor.fetchall()
+    conn.close()
+
+    users = [
+        {"username": r[0], "password": r[1], "is_admin": bool(r[2])}
+        for r in rows
+    ]
+    return jsonify(users)
+
 # ==== Database Initialization ====
 def init_db():
     """
@@ -85,7 +99,7 @@ def register():
         return jsonify({"error": "Password must have at least 1 uppercase, 1 digit, 6+ chars"}), 400
 
     success, message = signup_user(username, password, is_admin)
-    status_code = 200 if success else 409
+    status_code = 200 if success else 400
     return jsonify({"message": message}), status_code
 
 
@@ -101,7 +115,7 @@ def login():
     if login_user(username, password):
         return jsonify({"message": "Login successful"})
     else:
-        return jsonify({"message": "Login failed"}), 401
+        return jsonify({"message": "Login failed"}), 400
 
 
 @app.route('/api/videos', methods=['POST'])
@@ -134,12 +148,12 @@ def add_video():
     result = cursor.fetchone()
     if not result:
         conn.close()
-        return jsonify({"error": "Invalid credentials"}), 401
+        return jsonify({"error": "Invalid credentials"}), 400
 
     is_admin = result[0]
     if not is_admin:
         conn.close()
-        return jsonify({"error": "User is not authorized to add videos"}), 403
+        return jsonify({"error": "User is not authorized to add videos"}), 400
 
     # Add video
     cursor.execute("INSERT INTO videos (title, category, level) VALUES (?, ?, ?)",
@@ -147,7 +161,7 @@ def add_video():
     conn.commit()
     conn.close()
 
-    return jsonify({"message": "Video added successfully ✅"}), 201
+    return jsonify({"message": "Video added successfully ✅"}), 200
 
 
 @app.route('/api/videos', methods=['GET'])

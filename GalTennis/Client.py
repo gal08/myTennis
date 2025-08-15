@@ -1,15 +1,12 @@
 import socket  # For TCP communication with the server
-
+import requests
 # Server connection details
-IP = "127.0.0.1"  # Server IP address
-PORT = 1730  # Server port
+BASE_URL = "http://127.0.0.1:5000/"
 
 
-def send_request(command, username, password, is_admin=0):
-    """
+"""def send_request(command, username, password, is_admin=0):
     Connects to the server and sends a command with username, password, and admin flag.
     Prints the response received from the server.
-    """
     # Create a TCP socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         # Connect to the server
@@ -26,6 +23,7 @@ def send_request(command, username, password, is_admin=0):
 
         # Display the server's reply
         print("Server response:", response)
+"""
 
 
 def signup():
@@ -45,7 +43,6 @@ def signup():
         return list
     return []
 
-
 def main():
     """
     Main function that asks the user to choose between SIGNUP and LOGIN,
@@ -61,20 +58,28 @@ def main():
         return
 
     is_admin = 0  # Default: regular user
+    res = requests.get(BASE_URL + "/")
+    print("Server says:", res.text)
 
     # If the user chooses to sign up, ask for user type
     if choice == "SIGNUP":
         details = signup()
-        username = details[0]
-        password = details[1]
+        new_user = {
+            "username": details[0],
+            "password": details[1]
+        }
+        res = requests.post(BASE_URL + "/register", json=new_user)
+        print("Register:", res.json())
+
+        res = requests.get(BASE_URL + "/users")
+        print("Users:", res.json())
     else:
         # Ask for username and password
         username = input("Username: ").strip()
         password = input("Password: ").strip()
 
     # Send the request to the server
-    send_request(choice, username, password, is_admin)
-
+    """send_request(choice, username, password, is_admin)"""
 
 # Start the client program
 if __name__ == "__main__":
