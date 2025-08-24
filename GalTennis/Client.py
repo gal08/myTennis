@@ -1,6 +1,12 @@
 import requests
 import os
+import sqlite3
 from Video_player import play_video_with_system_audio
+
+
+# These are the only allowed categories and difficulties for videos
+ALLOWED_CATEGORIES = ('forehand', 'backhand', 'serve', 'slice', 'volley', 'smash')
+ALLOWED_DIFFICULTIES = ('easy', 'medium', 'hard')
 
 # Base URL of the Flask server
 BASE_URL = "http://127.0.0.1:5000/"
@@ -47,6 +53,35 @@ def upload_video(username, password):
 
     res = requests.post(BASE_URL + "/api/videos", json=video_data)
     print("Upload response:", res.json())
+    add_video(title, category, level)
+
+
+def add_video(filename, category, difficulty):
+    if not filename.lower().endswith(".mp4"):
+        return "Skipped (not an .mp4 file)"
+
+    if category not in ALLOWED_CATEGORIES:
+        return f"Skipped (invalid category: {category})"
+
+    if difficulty not in ALLOWED_DIFFICULTIES:
+        return f"Skipped (invalid difficulty: {difficulty})"
+
+    conn = sqlite3.connect(VIDEO_DB)
+    cursor = conn.cursor()
+
+    # Check if a video with the same filename is already in the database
+    cursor.execute("SELECT id FROM videos WHERE filename = ?", (filename,))
+    if cursor.fetchone():
+        conn.close()
+        return f"Skipped (already exists: {filename})"
+
+    # Insert the new video into the database
+    cursor.execute("INSERT INTO videos (filename, category, difficulty) VALUES (?, ?, ?)",
+                   (filename, category, difficulty))
+    conn.commit()
+    conn.close()
+
+    return f"Added: {filename}"
 
 
 def check_admin(username_to_check, users):

@@ -50,32 +50,6 @@ def init_video_db():
 # Skip if the file is not .mp4, has invalid category/difficulty, or already exists.
 
 
-def add_video(filename, category, difficulty):
-    if not filename.lower().endswith(".mp4"):
-        return "Skipped (not an .mp4 file)"
-
-    if category not in ALLOWED_CATEGORIES:
-        return f"Skipped (invalid category: {category})"
-
-    if difficulty not in ALLOWED_DIFFICULTIES:
-        return f"Skipped (invalid difficulty: {difficulty})"
-
-    conn = sqlite3.connect(VIDEO_DB)
-    cursor = conn.cursor()
-
-    # Check if a video with the same filename is already in the database
-    cursor.execute("SELECT id FROM videos WHERE filename = ?", (filename,))
-    if cursor.fetchone():
-        conn.close()
-        return f"Skipped (already exists: {filename})"
-
-    # Insert the new video into the database
-    cursor.execute("INSERT INTO videos (filename, category, difficulty) VALUES (?, ?, ?)",
-                   (filename, category, difficulty))
-    conn.commit()
-    conn.close()
-
-    return f"Added: {filename}"
 
 # Go through all the .mp4 files in the videos folder
 # Try to extract category and difficulty from the filename
@@ -116,4 +90,4 @@ if __name__ == "__main__":
     if not authenticate_manager():  # ask for manager login
         exit()
 
-    load_all_videos_from_folder()  # try to add all videos from folder to DB
+    #load_all_videos_from_folder()  # try to add all videos from folder to DB
