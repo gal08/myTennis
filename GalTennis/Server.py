@@ -29,10 +29,11 @@ def get_users():
     ]
     return jsonify(users)
 
+
 # ==== Database Initialization ====
 def init_db():
     """
-    Create 'users' and 'videos' tables.
+    Create 'users', 'videos', and 'likes' tables.
     """
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -53,6 +54,17 @@ def init_db():
             title TEXT NOT NULL,
             category TEXT NOT NULL,
             level TEXT NOT NULL
+        )
+    """)
+
+    # Likes table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS likes (
+            username TEXT,
+            title TEXT,
+            PRIMARY KEY (username, title),
+            FOREIGN KEY (username) REFERENCES users(username),
+            FOREIGN KEY (title) REFERENCES videos(title)
         )
     """)
 
@@ -120,17 +132,6 @@ def login():
 
 @app.route('/api/videos', methods=['POST'])
 def add_video():
-    """
-    Only admin users can add videos.
-    JSON input:
-    {
-        "username": "admin",
-        "password": "Admin123",
-        "title": "Serve Basics",
-        "category": "Serve",
-        "level": "Beginner"
-    }
-    """
     data = request.get_json()
     username = data.get("username")
     password = data.get("password")
@@ -166,9 +167,6 @@ def add_video():
 
 @app.route('/api/videos', methods=['GET'])
 def get_videos():
-    """
-    Return list of all videos.
-    """
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("SELECT title, category, level FROM videos")
@@ -177,6 +175,59 @@ def get_videos():
 
     videos = [{"title": r[0], "category": r[1], "level": r[2]} for r in rows]
     return jsonify(videos)
+
+
+@app.route('/api/like', methods=['POST'])
+def like_video():
+    data = request.get_json()
+    username = data.get("username")
+    title = data.get("title")
+
+    if not username or not title:
+        return jsonify({"error": "Missing username or title"}), 400
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    # check if user exists
+    cursor.execute("SELECT 1 FROM users WHERE username=?", (username,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({"error": "User does not exist"}), 400
+
+    # check if video exists
+    cursor.execute("SELECT 1 FROM videos WHERE title=?", (title,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({"error": "Video does not exist"}), 400
+
+    try:
+        cursor.execute("INSERT INTO likes (username, title) VALUES (?, ?)", (username, title))
+        conn.commit()
+        conn.close()
+        return jsonify({"message": "Liked successfully ❤️"}), 200
+    except sqlite3.IntegrityError:
+        conn.close()
+        return jsonify({"message": "Already liked"}), 200
+
+
+@app.route('/api/likes', methods=['GET'])
+def get_likes():
+    """
+    Returns number of likes per video
+    """
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT title, COUNT(*) as like_count
+        FROM likes
+        GROUP BY title
+    """)
+    rows = cursor.fetchall()
+    conn.close()
+
+    results = [{"title": r[0], "likes": r[1]} for r in rows]
+    return jsonify(results)
 
 
 # ==== Entry Point ====
