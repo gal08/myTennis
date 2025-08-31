@@ -155,14 +155,24 @@ def add_video():
     conn.commit()
     conn.close()
 
+
+    conn = sqlite3.connect("videos.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO videos (filename, category, difficulty) VALUES (?, ?, ?)",
+                   (title, category, level))
+
+
+    conn.commit()
+    conn.close()
+    return jsonify({"message": "Video added successfully ✅"}), 200
     return jsonify({"message": "Video added successfully ✅"}), 200
 
 
 @app.route('/api/videos', methods=['GET'])
 def get_videos():
-    conn = sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect("videos.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT title, category, level FROM videos")
+    cursor.execute("SELECT filename, category, difficulty FROM videos")
     rows = cursor.fetchall()
     conn.close()
 

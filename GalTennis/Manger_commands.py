@@ -11,7 +11,7 @@ ALLOWED_DIFFICULTIES = ('easy', 'medium', 'hard')
 
 # Manager login credentials
 MANAGER_USERNAME = "Gal"
-MANAGER_PASSWORD = "Haham2008"
+MANAGER_PASSWORD = "Hahahm2008"
 
 # Ask the manager to enter a username and password.
 # Return True if correct, otherwise return False.
