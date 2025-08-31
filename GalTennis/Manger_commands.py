@@ -42,15 +42,19 @@ def init_video_db():
             difficulty TEXT NOT NULL CHECK(difficulty IN {ALLOWED_DIFFICULTIES})
         )
     """)
+    # Likes table
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS likes (
+                username TEXT,
+                title TEXT,
+                PRIMARY KEY (username, title),
+                FOREIGN KEY (username) REFERENCES users(username),
+                FOREIGN KEY (title) REFERENCES videos(title)
+            )
+        """)
     conn.commit()
     conn.close()
     print("Video database initialized successfully.\n")
-
-# Try to add a new video to the database.
-# Skip if the file is not .mp4, has invalid category/difficulty, or already exists.
-
-
-
 # Go through all the .mp4 files in the videos folder
 # Try to extract category and difficulty from the filename
 # Then try to add the video to the database

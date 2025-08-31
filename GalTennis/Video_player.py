@@ -103,6 +103,7 @@ objShell.Run "cmd /c start /min """" ""{self.video_path}""", 0, False
 
 
 def play_video_with_system_audio(video_path):
+    print(f"Looking for file at: {video_path}")
     """Play video with system audio player"""
 
     if not os.path.exists(video_path):
@@ -176,6 +177,7 @@ def play_video_with_system_audio(video_path):
     cap.release()
     cv2.destroyAllWindows()
     return True
+
 
 
 def simple_dual_window_approach(video_path):

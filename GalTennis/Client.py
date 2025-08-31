@@ -8,8 +8,33 @@ from Video_player import play_video_with_system_audio
 ALLOWED_CATEGORIES = ('forehand', 'backhand', 'serve', 'slice', 'volley', 'smash')
 ALLOWED_DIFFICULTIES = ('easy', 'medium', 'hard')
 
+# Path to the database file and the folder where video files are stored
+VIDEO_DB = "videos.db"
+VIDEO_FOLDER = "videos"
 # Base URL of the Flask server
 BASE_URL = "http://127.0.0.1:5000/"
+
+
+def init_video_db():
+    conn = sqlite3.connect(VIDEO_DB)
+    cursor = conn.cursor()
+    cursor.execute(f"""
+        CREATE TABLE IF NOT EXISTS videos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT NOT NULL,
+            category TEXT NOT NULL CHECK(category IN {ALLOWED_CATEGORIES}),
+            difficulty TEXT NOT NULL CHECK(difficulty IN {ALLOWED_DIFFICULTIES})
+        )
+    """)
+    conn.commit()
+    conn.close()
+    print("Video database initialized successfully.\n")
+
+"""Try to add a new video to the database.
+Skip if the file is not .mp4, has invalid category/difficulty, or already exists.
+Go through all the .mp4 files in the videos folder
+Try to extract category and difficulty from the filename
+Then try to add the video to the database"""
 
 
 def signup():
@@ -53,7 +78,32 @@ def upload_video(username, password):
 
     res = requests.post(BASE_URL + "/api/videos", json=video_data)
     print("Upload response:", res.json())
-    add_video(title, category, level)
+    print(title)
+    print(category)
+    print(level)
+    print(add_video(title + ".mp4", category, level))
+
+
+def upload_video_by_user(username, password):
+    print("=== User Video Upload ===")
+
+    filename = input("Enter video filename (e.g. forehand_easy_1.mp4): ").strip()
+    category = input("Enter category (forehand, backhand, serve, slice, volley, smash): ").strip().lower()
+    difficulty = input("Enter difficulty (easy, medium, hard): ").strip().lower()
+
+    video_data = {
+        "username": username,
+        "password": password,
+        "title": filename,
+        "category": category,
+        "level": difficulty
+    }
+
+    try:
+        res = requests.post(BASE_URL + "/api/videos", json=video_data)
+        print("Server response:", res.json())
+    except Exception as e:
+        print("Error sending video to server:", e)
 
 
 def add_video(filename, category, difficulty):
@@ -142,48 +192,66 @@ def main():
         # Admin menu
         if login_successful and check_admin(username, users_data):
             print(f"\nWelcome admin {username}! You can upload videos.")
+            init_video_db()
             upload_video(username, password)
 
         # Regular user menu
         elif login_successful:
             print(f"\nWelcome {username}! You are logged in as a regular user.")
+            init_video_db()
 
-            # Get available videos
-            videos_res = requests.get(BASE_URL + "/api/videos")
-            videos = videos_res.json()
+            while True:
+                print("\nChoose an option:")
+                print("1. View available videos")
+                print("2. Upload a video")
+                print("0. Logout")
 
-            if not videos:
-                print("No videos available.")
-                return
+                option = input("Your choice: ").strip()
 
-            print("\nAvailable Videos:")
-            for i, video in enumerate(videos):
-                print(f"{i+1}. {video['title']} ({video['category']} - {video['level']})")
+                if option == "1":
+                    # Get available videos
+                    videos_res = requests.get(BASE_URL + "/api/videos")
+                    videos = videos_res.json()
 
-            try:
-                # User chooses video to watch
-                choice = int(input("Select a video to play (number): ")) - 1
-                selected_video = videos[choice]['title']
-                video_path = os.path.join("videos", selected_video + ".mp4")
+                    if not videos:
+                        print("No videos available.")
+                        continue
 
-                if os.path.exists(video_path):
-                    play_video_with_system_audio(video_path)
+                    print("\nAvailable Videos:")
+                    for i, video in enumerate(videos):
+                        print(f"{i + 1}. {video['title']} ({video['category']} - {video['level']})")
 
-                    # Ask if user wants to like the video
-                    like = input("Would you like to like this video? (yes/no): ").strip().lower()
-                    if like == "yes":
-                        like_res = requests.post(BASE_URL + "/api/like", json={
-                            "username": username,
-                            "title": selected_video
-                        })
-                        print("Like:", like_res.json().get("message", "Something went wrong."))
+                    try:
+                        # User chooses video to watch
+                        choice = int(input("Select a video to play (number): ")) - 1
+                        selected_video = videos[choice]['title']
+                        video_path = os.path.join("videos", selected_video + ".mp4")
+
+                        if os.path.exists(video_path):
+                            play_video_with_system_audio(video_path)
+
+                            # Ask if user wants to like the video
+                            like = input("Would you like to like this video? (yes/no): ").strip().lower()
+                            if like == "yes":
+                                like_res = requests.post(BASE_URL + "/api/like", json={
+                                    "username": username,
+                                    "title": selected_video
+                                })
+                                print("Like:", like_res.json().get("message", "Something went wrong."))
+                        else:
+                            print("Video file not found locally.")
+                    except (IndexError, ValueError):
+                        print("Invalid selection.")
+
+                elif option == "2":
+                    upload_video_by_user(username, password)
+
+                elif option == "0":
+                    print("Logging out...")
+                    break
+
                 else:
-                    print("Video file not found locally.")
-            except (IndexError, ValueError):
-                print("Invalid selection.")
-
-        else:
-            print("Login/signup failed.")
+                    print("Invalid option. Please try again.")
 
 
 if __name__ == "__main__":

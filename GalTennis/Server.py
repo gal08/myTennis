@@ -145,18 +145,11 @@ def add_video():
     # Authenticate and check admin
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-    cursor.execute("SELECT is_admin FROM users WHERE username=? AND password=?", (username, password))
-    result = cursor.fetchone()
-    if not result:
+    cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
+    if not cursor.fetchone():
         conn.close()
         return jsonify({"error": "Invalid credentials"}), 400
 
-    is_admin = result[0]
-    if not is_admin:
-        conn.close()
-        return jsonify({"error": "User is not authorized to add videos"}), 400
-
-    # Add video
     cursor.execute("INSERT INTO videos (title, category, level) VALUES (?, ?, ?)",
                    (title, category, level))
     conn.commit()
