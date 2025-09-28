@@ -1,181 +1,119 @@
+import socket
+import json
+import threading
 import sqlite3
-from flask import Flask, request, jsonify
+import os
+from Authication import Authentication
+from Videos_Handler import VideosHandler
+from Likes_Handler import LikesHandler
+from Comments_Handler import CommentsHandler
+from Stories_Handler import StoriesHandler
+from Manger_commands import ManagerCommands
 
 # --- Configuration ---
-app = Flask(__name__)
-DB_FILE = "users.db"
-ALLOWED_CATEGORIES = ('forehand', 'backhand', 'serve', 'slice', 'volley', 'smash')
-ALLOWED_DIFFICULTIES = ('easy', 'medium', 'hard')
+HOST = '127.0.0.1'
+PORT = 5000
+DB_FILE = 'users.db'
 
 
-# --- Database Initialization (Server-side) ---
-def init_db():
-    """Initializes the unified database and creates all necessary tables."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            is_admin INTEGER NOT NULL
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS videos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filename TEXT NOT NULL,
-            category TEXT NOT NULL CHECK(category IN ('forehand', 'backhand', 'serve', 'slice', 'volley', 'smash')),
-            difficulty TEXT NOT NULL CHECK(difficulty IN ('easy', 'medium', 'hard'))
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS likes (
-            username TEXT,
-            title TEXT,
-            PRIMARY KEY (username, title)
-        )
-    """)
-    conn.commit()
-    conn.close()
-    print("Database initialized successfully.")
+class Server:
+    def __init__(self, host=HOST, port=PORT):
+        self.host = host
+        self.port = port
+        self.running = False
 
+        # Initialize the Handler classes
+        self.auth_handler = Authentication()
+        self.videos_handler = VideosHandler()
+        self.likes_handler = LikesHandler()
+        self.comments_handler = CommentsHandler()
+        self.stories_handler = StoriesHandler()
+        self.manager_commands = ManagerCommands()
 
-# --- API Routes ---
-@app.route('/')
-def index():
-    return "Server is running OK ✅"
+        print("Server Handlers Initialized.")
 
+    def start(self):
+        """Starts the server and listens for client connections."""
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Using SO_REUSEADDR allows the port to be reused immediately after closing
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(5)
+        self.running = True
+        print(f"✅ Server is running on {self.host}:{self.port}. Awaiting connections...")
 
-@app.route('/api/register', methods=['POST'])
-def register_user():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    is_admin = data.get('is_admin', 0)
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)",
-                       (username, password, is_admin))
-        conn.commit()
-        return jsonify(
-            {"message": "Signup successful as regular user" if not is_admin else "Admin user registered"}), 200
-    except sqlite3.IntegrityError:
-        return jsonify({"error": "Username already exists"}), 400
-    finally:
-        conn.close()
+        try:
+            while self.running:
+                client_socket, addr = self.server_socket.accept()
+                print(f"Connection established with {addr}")
+                # Handle each client in a separate Thread
+                client_thread = threading.Thread(target=self.handle_client, args=(client_socket,))
+                client_thread.start()
+        except KeyboardInterrupt:
+            self.stop()
+        except Exception as e:
+            print(f"Server error: {e}")
+            self.stop()
 
+    def stop(self):
+        """Stops the server."""
+        self.running = False
+        self.server_socket.close()
+        print("🛑 Server shutdown.")
 
-@app.route('/api/login', methods=['POST'])
-def login_user():
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username = ? AND password = ?", (username, password))
-    user = cursor.fetchone()
-    conn.close()
-    if user:
-        return jsonify({"message": "Login successful"}), 200
-    else:
-        return jsonify({"error": "Invalid username or password"}), 401
+    def handle_client(self, client_socket):
+        """
+        Receives data from the client, routes it to the appropriate Handler, and sends a response.
+        """
+        try:
+            # Receive raw data
+            data_raw = client_socket.recv(4096).decode('utf-8')
 
+            if not data_raw:
+                return
 
-@app.route('/api/users', methods=['GET'])
-def get_users():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT username, is_admin FROM users")
-    users = [{"username": row[0], "is_admin": bool(row[1])} for row in cursor.fetchall()]
-    conn.close()
-    return jsonify(users)
+            # Client sends JSON
+            request_data = json.loads(data_raw)
+            request_type = request_data.get('type')
+            payload = request_data.get('payload', {})
 
+            response = {"status": "error", "message": "Unrecognized request"}
 
-@app.route('/api/videos', methods=['POST'])
-def add_video():
-    data = request.get_json()
-    username = data.get("username")
-    password = data.get("password")
-    title = data.get("title")
-    category = data.get("category")
-    level = data.get("level")
+            # --- Request Routing ---
+            if request_type in ['LOGIN', 'SIGNUP']:
+                response = self.auth_handler.handle_request(request_type, payload)
 
-    if not all([username, password, title, category, level]):
-        return jsonify({"error": "Missing fields"}), 400
+            elif request_type in ['ADD_VIDEO', 'GET_VIDEOS']:
+                response = self.videos_handler.handle_request(request_type, payload)
 
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
-        if not cursor.fetchone():
-            return jsonify({"error": "Invalid credentials"}), 400
+            elif request_type in ['LIKE_VIDEO', 'GET_LIKES_COUNT']:
+                response = self.likes_handler.handle_request(request_type, payload)
 
-        cursor.execute("INSERT INTO videos (filename, category, difficulty) VALUES (?, ?, ?)",
-                       (title, category, level))
-        conn.commit()
-        return jsonify({"message": "Video added successfully ✅"}), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        if conn:
-            conn.close()
+            # --- Routing to New Handlers ---
+            elif request_type in ['ADD_COMMENT', 'GET_COMMENTS']:
+                response = self.comments_handler.handle_request(request_type, payload)
 
+            elif request_type in ['ADD_STORY', 'GET_STORIES']:
+                response = self.stories_handler.handle_request(request_type, payload)
 
-@app.route('/api/videos', methods=['GET'])
-def get_videos():
-    conn = None
-    try:
-        conn = sqlite3.connect(DB_FILE)
-        cursor = conn.cursor()
-        cursor.execute("SELECT filename, category, difficulty FROM videos")
-        rows = cursor.fetchall()
-        videos = [{"title": r[0], "category": r[1], "level": r[2]} for r in rows]
-        return jsonify(videos)
-    except sqlite3.Error as e:
-        return jsonify({"error": f"Database error: {e}"}), 500
-    finally:
-        if conn:
-            conn.close()
+            elif request_type in ['GET_ALL_USERS']:  # Manager command
+                # Note: Permission check (is_admin) should be performed before executing this command in real use
+                response = self.manager_commands.handle_request(request_type, payload)
 
+            # --- Sending Response to Client ---
+            client_socket.sendall(json.dumps(response).encode('utf-8'))
 
-@app.route('/api/like', methods=['POST'])
-def like_video():
-    data = request.get_json()
-    username = data.get('username')
-    title = data.get('title')
-
-    if not all([username, title]):
-        return jsonify({"error": "Missing data"}), 400
-
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    try:
-        cursor.execute("INSERT INTO likes (username, title) VALUES (?, ?)", (username, title))
-        conn.commit()
-        return jsonify({"message": "Video liked successfully"}), 200
-    except sqlite3.IntegrityError:
-        return jsonify({"message": "You have already liked this video"}), 409
-    finally:
-        conn.close()
-
-
-@app.route('/api/likes', methods=['GET'])
-def get_likes():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT title, COUNT(username) as like_count
-        FROM likes
-        GROUP BY title
-    """)
-    likes = [{"title": row[0], "likes": row[1]} for row in cursor.fetchall()]
-    conn.close()
-    return jsonify(likes)
+        except json.JSONDecodeError:
+            print("Received non-JSON data from client.")
+            client_socket.sendall(json.dumps({"status": "error", "message": "Invalid request format."}).encode('utf-8'))
+        except Exception as e:
+            print(f"Error handling client: {e}")
+            client_socket.sendall(
+                json.dumps({"status": "error", "message": f"Server processing error: {e}"}).encode('utf-8'))
+        finally:
+            client_socket.close()
 
 
 if __name__ == '__main__':
-    init_db()
-    app.run(debug=True)
+    server_app = Server()
+    server_app.start()
