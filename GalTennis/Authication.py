@@ -1,7 +1,12 @@
 import sqlite3
+import hashlib
 
-# DB configuration (Ensure the file name matches other files)
+# DB configuration
 DB_NAME = 'users.db'
+
+# ADMIN SECRET KEY - Change this to your own secret!
+# In production, this should be in an environment variable or config file
+ADMIN_SECRET_KEY = "SecretKey"
 
 
 class Authentication:
@@ -24,19 +29,41 @@ class Authentication:
         conn.commit()
         conn.close()
 
-    def signup(self, username, password, is_admin=0):
-        """Registers a new user."""
+    def _verify_admin_secret(self, provided_secret):
+        """
+        Verifies if the provided admin secret matches the stored secret.
+        Returns True if valid, False otherwise.
+        """
+        if not provided_secret:
+            return False
+        return provided_secret == ADMIN_SECRET_KEY
+
+    def signup(self, username, password, is_admin=0, admin_secret=None):
+        """
+        Registers a new user.
+        If is_admin=1, requires valid admin_secret to be provided.
+        """
+        # Security check: If trying to register as admin, verify the secret
+        if is_admin == 1:
+            if not self._verify_admin_secret(admin_secret):
+                return {
+                    "status": "error",
+                    "message": "Invalid admin secret key. Access denied."
+                }
+
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
 
         try:
-            # Inserting the password as plain text (as in the original Flask code)
+            # Insert user with plain text password (as per original code)
             cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)",
                            (username, password, is_admin))
             conn.commit()
-            return {"status": "success", "message": f"Signup successful as {'admin' if is_admin else 'regular user'}"}
+            return {
+                "status": "success",
+                "message": f"Signup successful as {'admin' if is_admin else 'regular user'}"
+            }
         except sqlite3.IntegrityError:
-            # Error handling: Username already exists
             return {"status": "error", "message": "Username already exists"}
         finally:
             conn.close()
@@ -46,20 +73,23 @@ class Authentication:
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
 
-        # Check username and password as plain text
+        # Check username and password
         cursor.execute("SELECT is_admin FROM users WHERE username=? AND password=?", (username, password))
         user_data = cursor.fetchone()
         conn.close()
 
         if user_data:
             is_admin = user_data[0]
-            return {"status": "success", "message": "Login successful", "is_admin": is_admin}
+            return {
+                "status": "success",
+                "message": "Login successful",
+                "is_admin": is_admin
+            }
 
-        # Error handling: Incorrect password / User does not exist
         return {"status": "error", "message": "Invalid username or password."}
 
-    # Method to unify logic for use by the Server
     def handle_request(self, request_type, payload):
+        """Handles authentication requests from the server."""
         username = payload.get('username')
         password = payload.get('password')
 
@@ -67,8 +97,9 @@ class Authentication:
             return {"status": "error", "message": "Missing username or password in request."}
 
         if request_type == 'SIGNUP':
-            # is_admin defaults to 0 as per your original Flask code
-            return self.signup(username, password, payload.get('is_admin', 0))
+            is_admin = payload.get('is_admin', 0)
+            admin_secret = payload.get('admin_secret', None)
+            return self.signup(username, password, is_admin, admin_secret)
         elif request_type == 'LOGIN':
             return self.login(username, password)
 

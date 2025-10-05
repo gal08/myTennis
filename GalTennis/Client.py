@@ -2,12 +2,13 @@ import socket
 import json
 import os
 import sys
+from Protocol import Protocol
 from Video_player import play_video_with_system_audio
 
 # --- Configuration ---
-HOST = '127.0.0.1'  # Localhost IP
+HOST = '127.0.0.1'
 PORT = 5000
-VIDEO_FOLDER = "videos"  # Folder where video files are expected to be saved locally
+VIDEO_FOLDER = "videos"
 
 
 class Client:
@@ -20,15 +21,14 @@ class Client:
         self.host = HOST
         self.port = PORT
         self.username = None
-        self.is_admin = 0  # 0 for regular user, 1 for admin
+        self.is_admin = 0
 
-        # Ensure the video folder exists
         if not os.path.exists(VIDEO_FOLDER):
             os.makedirs(VIDEO_FOLDER)
 
     def _send_request(self, request_type, payload):
         """
-        Sends a JSON request to the server and returns the server's JSON response.
+        Sends a JSON request to the server using Protocol and returns the server's JSON response.
         """
         try:
             # Create a socket connection
@@ -39,27 +39,26 @@ class Client:
             request_data = json.dumps({
                 "type": request_type,
                 "payload": payload
-            }).encode('utf-8')
+            })
 
-            # Send data to the server
-            client_socket.sendall(request_data)
+            # Send data to the server using Protocol
+            Protocol.send(client_socket, request_data)
 
-            # Receive the response
-            response_data = client_socket.recv(4096).decode('utf-8')
+            # Receive the response using Protocol
+            response_data = Protocol.recv(client_socket)
             response = json.loads(response_data)
 
             client_socket.close()
             return response
 
         except ConnectionRefusedError:
-            print(f"❌ Error: Could not connect to the server at {self.host}:{self.port}. Is the server running?")
-            # We don't exit here, just return an error state
+            print(f"Error: Could not connect to the server at {self.host}:{self.port}. Is the server running?")
             return {"status": "error", "message": "Connection Refused."}
         except json.JSONDecodeError:
-            print("❌ Error: Received non-JSON or corrupted data from the server.")
+            print("Error: Received non-JSON or corrupted data from the server.")
             return {"status": "error", "message": "Invalid server response format."}
         except Exception as e:
-            print(f"❌ An unexpected error occurred during request: {e}")
+            print(f"An unexpected error occurred during request: {e}")
             return {"status": "error", "message": f"Network Error: {e}"}
 
     # --- Authentication Methods ---
@@ -70,16 +69,31 @@ class Client:
         username = input("Enter username: ").strip()
         password = input("Enter password: ").strip()
 
-        # Optional: Ask if the user should be an admin (only for initial testing/setup)
         is_admin_input = input("Register as admin? (y/N): ").strip().lower()
-        is_admin = 1 if is_admin_input == 'y' else 0
+        is_admin = 0
+        admin_secret = None
 
-        response = self._send_request('SIGNUP', {'username': username, 'password': password, 'is_admin': is_admin})
+        if is_admin_input == 'y':
+            # Prompt for admin secret key
+            admin_secret = input("Enter admin secret key: ").strip()
+            is_admin = 1
+
+        payload = {
+            'username': username,
+            'password': password,
+            'is_admin': is_admin
+        }
+
+        # Only include admin_secret if attempting admin registration
+        if is_admin == 1:
+            payload['admin_secret'] = admin_secret
+
+        response = self._send_request('SIGNUP', payload)
 
         if response.get('status') == 'success':
-            print(f"✅ {response['message']}")
+            print(f"✓ {response['message']}")
         else:
-            print(f"❌ Signup failed: {response.get('message', 'Unknown error')}")
+            print(f"✗ Signup failed: {response.get('message', 'Unknown error')}")
 
     def login(self):
         """Handles user login."""
@@ -93,7 +107,7 @@ class Client:
             self.username = username
             return True
         else:
-            print(f"❌ Login failed: {response.get('message', 'Unknown error')}")
+            print(f"✗ Login failed: {response.get('message', 'Unknown error')}")
             return False
 
     # --- Video Management Methods ---
@@ -121,7 +135,7 @@ class Client:
         response = self._send_request('GET_VIDEOS', {})
 
         if response.get('status') != 'success' or not response.get('videos'):
-            print(f"❌ Could not retrieve videos: {response.get('message', 'No videos found or server error.')}")
+            print(f"✗ Could not retrieve videos: {response.get('message', 'No videos found or server error.')}")
             return
 
         videos = response['videos']
@@ -132,14 +146,12 @@ class Client:
             return
 
         for i, video in enumerate(videos):
-            # Display title, uploader, category, level, and fetch likes count
             likes_res = self._send_request('GET_LIKES_COUNT', {'video_title': video['title']})
             likes_count = likes_res.get('count', 0)
 
             print(
                 f"[{i + 1}] Title: {video['title']} | Category: {video['category']} | Level: {video['level']} | Uploader: {video['uploader']} | Likes: {likes_count}")
 
-        # Allow user to select a video to play
         while True:
             selection = input("Enter video number to select, or (B)ack: ").strip().upper()
             if selection == 'B':
@@ -162,20 +174,19 @@ class Client:
         category = input("Enter category (forehand/backhand/serve/slice/volley/smash): ").strip().lower()
         level = input("Enter difficulty (easy/medium/hard): ").strip().lower()
 
-        # The uploader is the currently logged-in user
         payload = {
             'title': title,
             'category': category,
             'level': level,
-            'uploader': self.username  # Must send the uploader's username
+            'uploader': self.username
         }
 
         response = self._send_request('ADD_VIDEO', payload)
 
         if response.get('status') == 'success':
-            print(f"✅ {response['message']}")
+            print(f"✓ {response['message']}")
         else:
-            print(f"❌ Upload failed: {response.get('message', 'Unknown error')}")
+            print(f"✗ Upload failed: {response.get('message', 'Unknown error')}")
 
     # --- Interaction and Playback ---
 
@@ -192,15 +203,10 @@ class Client:
         choice = input("Enter choice: ").strip()
 
         if choice == '1':
-            # Simulate playing the video file (requires the file to exist locally)
-            print(f"▶️ Playing video: {video_title}...")
-            # We assume the file is available locally for the player simulation
-            # The client only manages metadata, not file transfer, in this simple model.
+            print(f"▶ Playing video: {video_title}...")
             video_path = os.path.join(VIDEO_FOLDER, video_title)
-
-            # Simple simulation: just call the player with a placeholder path
             play_video_with_system_audio(video_path)
-            print(f"⏹️ Finished playing: {video_title}")
+            print(f"ℹ Finished playing: {video_title}")
 
         elif choice == '2':
             self.toggle_like(video_title)
@@ -214,7 +220,6 @@ class Client:
         else:
             print("Invalid choice.")
 
-        # Loop back to interaction menu to allow chaining actions
         self.handle_video_interaction(video_data)
 
     def toggle_like(self, video_title):
@@ -228,11 +233,10 @@ class Client:
         if response.get('status') == 'success':
             print(f"👍 {response['message']}")
         else:
-            print(f"❌ Action failed: {response.get('message', 'Unknown error')}")
+            print(f"✗ Action failed: {response.get('message', 'Unknown error')}")
 
     def view_and_add_comments(self, video_title):
         """Retrieves and allows adding comments."""
-        # 1. Get and display comments
         response = self._send_request('GET_COMMENTS', {'video_title': video_title})
 
         print(f"\n--- Comments for {video_title} ---")
@@ -242,7 +246,6 @@ class Client:
         else:
             print("No comments yet.")
 
-        # 2. Allow user to add a new comment
         comment_content = input("\nAdd a new comment (or press Enter to skip): ").strip()
 
         if comment_content:
@@ -254,9 +257,9 @@ class Client:
             add_res = self._send_request('ADD_COMMENT', payload)
 
             if add_res.get('status') == 'success':
-                print("✅ Comment added.")
+                print("✓ Comment added.")
             else:
-                print(f"❌ Failed to add comment: {add_res.get('message', 'Error.')}")
+                print(f"✗ Failed to add comment: {add_res.get('message', 'Error.')}")
 
     # --- Stories Management ---
 
@@ -267,14 +270,13 @@ class Client:
         print("\n--- Live Stories (Last 24h) ---")
 
         if response.get('status') != 'success' or not response.get('stories'):
-            print(f"❌ Could not retrieve stories: {response.get('message', 'No active stories found.')}")
+            print(f"✗ Could not retrieve stories: {response.get('message', 'No active stories found.')}")
             return
 
         stories = response['stories']
         for i, story in enumerate(stories):
             print(f"[{i + 1}] {story['username']} posted a story at {story['timestamp']}")
 
-        # Allow user to view content (simple print simulation)
         while True:
             selection = input("Enter story number to view content, or (B)ack: ").strip().upper()
             if selection == 'B':
@@ -309,9 +311,9 @@ class Client:
         response = self._send_request('ADD_STORY', payload)
 
         if response.get('status') == 'success':
-            print(f"✅ {response['message']}")
+            print(f"✓ {response['message']}")
         else:
-            print(f"❌ Failed to post story: {response.get('message', 'Unknown error')}")
+            print(f"✗ Failed to post story: {response.get('message', 'Unknown error')}")
 
     # --- Manager Commands ---
 
@@ -324,7 +326,7 @@ class Client:
         response = self._send_request('GET_ALL_USERS', {})
 
         if response.get('status') != 'success' or not response.get('users'):
-            print(f"❌ Could not retrieve users: {response.get('message', 'Server error.')}")
+            print(f"✗ Could not retrieve users: {response.get('message', 'Server error.')}")
             return
 
         print("\n--- All Registered Users (MANAGER VIEW) ---")
@@ -338,28 +340,20 @@ class Client:
     def run(self):
         """Main client application loop."""
 
-        # Initial authentication
         while self.username is None:
-            # שינוי ההנחיה: שימוש במילים מלאות
             print("\nWelcome! Choose: (Signup) / (Login)")
-
-            # Ensure choice is properly stripped and uppercase for robust input
             choice = input("Your choice: ").strip().upper()
 
-            # Filter out empty or non-SIGNUP/LOGIN choices immediately
             if not choice:
                 print("Invalid choice. Try again.")
                 continue
 
-            # בדיקה מול מילים מלאות
             if choice == "SIGNUP":
                 self.signup()
             elif choice == "LOGIN":
                 if self.login():
-                    # After successful login, attempt to get admin status
                     users_res = self._send_request('GET_ALL_USERS', {})
                     if users_res.get('users'):
-                        # Find the current user's admin status
                         for user in users_res['users']:
                             if user['username'] == self.username:
                                 self.is_admin = user['is_admin']
@@ -369,7 +363,6 @@ class Client:
             else:
                 print("Invalid choice. Try again.")
 
-        # Main menu loop
         while True:
             print("\n--- Main Menu ---")
             print("1. Videos (View/Upload)")
@@ -392,7 +385,6 @@ class Client:
             else:
                 print("Invalid choice.")
 
-    # --- Helper Method for Stories Menu ---
     def display_stories_menu(self):
         """Menu for stories functionality."""
         print("\n--- Stories Menu ---")
@@ -413,14 +405,9 @@ class Client:
 
 
 if __name__ == '__main__':
-    # play_video_with_system_audio() # Removed initial unnecessary call
-
-    # Check if the Video_player module is ready
     if 'Video_player' in sys.modules:
-        # If the video player system is imported, proceed with the client app
         client_app = Client()
         client_app.run()
     else:
-        # This occurs if the necessary video player component is missing or failed to import
-        print("❌ CRITICAL ERROR: The Video_player module is required but could not be loaded.")
+        print("✗ CRITICAL ERROR: The Video_player module is required but could not be loaded.")
         sys.exit(1)

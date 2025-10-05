@@ -161,7 +161,7 @@ def play_video_with_system_audio(video_path):
 
     if audio_started:
         print("Audio started in background")
-        time.sleep(1)  # Give audio a moment to initialize
+        time.sleep(0.05)  # Give audio a moment to initialize
 
     # Load video for visual playback
     cap = cv2.VideoCapture(video_path)
@@ -175,7 +175,7 @@ def play_video_with_system_audio(video_path):
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     total_time = total_frames / fps if fps > 0 else 0
-    delay = int(1000 / fps) if fps > 0 else 30
+    delay = max(1, int(1000 / fps) - 5) if fps > 0 else 30
 
     # --- START OF ASPECT RATIO FIX ---
     # Get original dimensions
@@ -209,6 +209,7 @@ def play_video_with_system_audio(video_path):
     # Setup window
     WINDOW_NAME = 'Tennis Video Player'
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+    cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_TOPMOST, 1)
     # Set the calculated dynamic size
     cv2.resizeWindow(WINDOW_NAME, display_width, display_height)
 
