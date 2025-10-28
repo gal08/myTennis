@@ -3,12 +3,26 @@ import json
 import os
 import sys
 from Protocol import Protocol
-from Video_player import play_video_with_system_audio
+#from Video_player import play_video_with_system_audio
+from newPlayVideo import play_video_wx
+
+# Import Login UI
+try:
+    from Login_UI import LoginFrame
+    import wx
+
+    GUI_AVAILABLE = True
+except ImportError:
+    GUI_AVAILABLE = False
+    print("Warning: wxPython not available. GUI login disabled.")
 
 # --- Configuration ---
 HOST = '127.0.0.1'
 PORT = 5000
-VIDEO_FOLDER = "videos"
+
+# Get the absolute path to the videos folder (in the same directory as Client.py)
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+VIDEO_FOLDER = os.path.join(SCRIPT_DIR, "videos")
 
 
 class Client:
@@ -23,8 +37,12 @@ class Client:
         self.username = None
         self.is_admin = 0
 
+        # Create videos folder if it doesn't exist
         if not os.path.exists(VIDEO_FOLDER):
             os.makedirs(VIDEO_FOLDER)
+            print(f"📁 Created videos folder at: {VIDEO_FOLDER}")
+        else:
+            print(f"📁 Videos folder found at: {VIDEO_FOLDER}")
 
     def _send_request(self, request_type, payload):
         """
@@ -74,7 +92,6 @@ class Client:
         admin_secret = None
 
         if is_admin_input == 'y':
-            # Prompt for admin secret key
             admin_secret = input("Enter admin secret key: ").strip()
             is_admin = 1
 
@@ -84,7 +101,6 @@ class Client:
             'is_admin': is_admin
         }
 
-        # Only include admin_secret if attempting admin registration
         if is_admin == 1:
             payload['admin_secret'] = admin_secret
 
@@ -95,8 +111,8 @@ class Client:
         else:
             print(f"✗ Signup failed: {response.get('message', 'Unknown error')}")
 
-    def login(self):
-        """Handles user login."""
+    def login_console(self):
+        """Handles user login via console."""
         print("\n--- Login ---")
         username = input("Enter username: ").strip()
         password = input("Enter password: ").strip()
@@ -105,10 +121,54 @@ class Client:
 
         if response.get('status') == 'success':
             self.username = username
+            self.is_admin = response.get('is_admin', 0)  # ✅ קבלת סטטוס אדמין מהתשובה
             return True
         else:
             print(f"✗ Login failed: {response.get('message', 'Unknown error')}")
             return False
+
+    def login_gui(self):
+        """Handles user login with GUI"""
+        if not GUI_AVAILABLE:
+            print("GUI not available. Please use console login.")
+            return False
+
+        app = wx.App()
+        login_frame = LoginFrame()
+        login_frame.Show()
+        app.MainLoop()
+
+        # After the GUI closes, check if login was successful
+        if login_frame.login_success and login_frame.logged_in_username:
+            self.username = login_frame.logged_in_username
+
+            # ✅ תיקון: נשלוף את הסטטוס מבקשת LOGIN חוזרת במקום GET_ALL_USERS
+            login_response = self._send_request('LOGIN', {
+                'username': self.username,
+                'password': ''  # אנחנו כבר מחוברים, אבל צריך לבדוק סטטוס
+            })
+
+            # אם יש is_admin בתשובה - נשתמש בו
+            if login_response.get('is_admin') is not None:
+                self.is_admin = login_response.get('is_admin', 0)
+            else:
+                # אחרת ננסה לקבל מ-GET_ALL_USERS (רק אם זה עובד)
+                try:
+                    users_res = self._send_request('GET_ALL_USERS', {})
+                    if users_res.get('status') == 'success' and users_res.get('users'):
+                        for user in users_res['users']:
+                            if user['username'] == self.username:
+                                self.is_admin = user['is_admin']
+                                break
+                except:
+                    # אם נכשל - פשוט לא אדמין
+                    self.is_admin = 0
+
+            print(
+                f"\nWelcome {self.username}! You are logged in as a {'manager' if self.is_admin else 'regular user'}.")
+            return True
+
+        return False
 
     # --- Video Management Methods ---
 
@@ -195,7 +255,7 @@ class Client:
         video_title = video_data['title']
 
         print(f"\n--- Interacting with: {video_title} ---")
-        print("1. Play Video (Simulated)")
+        print("1. Play Video")
         print("2. Toggle Like/Unlike")
         print("3. View/Add Comments")
         print("4. Back to Video List")
@@ -203,9 +263,25 @@ class Client:
         choice = input("Enter choice: ").strip()
 
         if choice == '1':
-            print(f"▶ Playing video: {video_title}...")
+            """print(f"▶ Playing video: {video_title}...")
             video_path = os.path.join(VIDEO_FOLDER, video_title)
             play_video_with_system_audio(video_path)
+            print(f"ℹ Finished playing: {video_title}")
+            print(video_path)"""
+            video_path = os.path.join(VIDEO_FOLDER, video_title)
+            print(video_path)
+
+            # Check if video file exists before trying to play
+            if not os.path.exists(video_path):
+                print(f"❌ Error: Video file not found at: {video_path}")
+                print(f"📂 Please make sure the file '{video_title}' exists in the videos folder.")
+                input("Press Enter to continue...")
+                return
+
+            print(f"▶ Playing video: {video_title}...")
+            print(f"📂 Path: {video_path}")
+            play_video_wx(video_path)
+            #play_video_with_system_audio(video_path)
             print(f"ℹ Finished playing: {video_title}")
 
         elif choice == '2':
@@ -340,29 +416,15 @@ class Client:
     def run(self):
         """Main client application loop."""
 
-        while self.username is None:
-            print("\nWelcome! Choose: (Signup) / (Login)")
-            choice = input("Your choice: ").strip().upper()
+        # Automatically open GUI Login
+        print("\n=== Tennis Social Network ===")
+        print("Opening login window...")
 
-            if not choice:
-                print("Invalid choice. Try again.")
-                continue
+        if not self.login_gui():
+            print("Login cancelled or failed. Exiting...")
+            sys.exit(0)
 
-            if choice == "SIGNUP":
-                self.signup()
-            elif choice == "LOGIN":
-                if self.login():
-                    users_res = self._send_request('GET_ALL_USERS', {})
-                    if users_res.get('users'):
-                        for user in users_res['users']:
-                            if user['username'] == self.username:
-                                self.is_admin = user['is_admin']
-                                break
-                    print(
-                        f"\nWelcome {self.username}! You are logged in as a {'regular user' if not self.is_admin else 'manager'}.")
-            else:
-                print("Invalid choice. Try again.")
-
+        # Main menu loop (after successful login)
         while True:
             print("\n--- Main Menu ---")
             print("1. Videos (View/Upload)")
@@ -405,9 +467,5 @@ class Client:
 
 
 if __name__ == '__main__':
-    if 'Video_player' in sys.modules:
-        client_app = Client()
-        client_app.run()
-    else:
-        print("✗ CRITICAL ERROR: The Video_player module is required but could not be loaded.")
-        sys.exit(1)
+    client_app = Client()
+    client_app.run()
