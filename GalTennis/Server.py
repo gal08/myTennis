@@ -10,11 +10,13 @@ from Likes_Handler import LikesHandler
 from Comments_Handler import CommentsHandler
 from Stories_Handler import StoriesHandler
 from Manger_commands import ManagerCommands
+from Video_Player_Server import run_video_player_server
 
 # --- Configuration ---
 HOST = '127.0.0.1'
 PORT = 5000
 DB_FILE = 'users.db'
+VIDEO_FOLDER = "videos"
 
 
 class Server:
@@ -22,6 +24,7 @@ class Server:
         self.host = host
         self.port = port
         self.running = False
+        self.video_server_thread = None
 
         # Initialize the Handler classes
         self.auth_handler = Authentication()
@@ -30,6 +33,10 @@ class Server:
         self.comments_handler = CommentsHandler()
         self.stories_handler = StoriesHandler()
         self.manager_commands = ManagerCommands()
+
+        # Ensure video folder exists
+        if not os.path.exists(VIDEO_FOLDER):
+            os.makedirs(VIDEO_FOLDER)
 
         print("Server Handlers Initialized.")
 
@@ -59,6 +66,35 @@ class Server:
         self.running = False
         self.server_socket.close()
         print("Server shutdown.")
+
+    def handle_play_video(self, payload):
+        """Handles PLAY_VIDEO request by starting the video streaming server."""
+        video_title = payload.get('video_title')
+        
+        if not video_title:
+            return {"status": "error", "message": "Video title not provided"}
+        
+        video_path = os.path.join(VIDEO_FOLDER, video_title)
+        
+        # Check if video file exists
+        if not os.path.exists(video_path):
+            return {"status": "error", "message": f"Video file not found: {video_title}"}
+        
+        try:
+            # Start video streaming server in background thread
+            self.video_server_thread = threading.Thread(
+                target=run_video_player_server,
+                args=(video_path,),
+                daemon=True
+            )
+            self.video_server_thread.start()
+            
+            print(f"Video streaming server started for: {video_title}")
+            return {"status": "success", "message": "Video server started. Ready to stream."}
+            
+        except Exception as e:
+            print(f"Error starting video server: {e}")
+            return {"status": "error", "message": f"Failed to start video server: {e}"}
 
     def handle_client(self, client_socket):
         """
@@ -97,6 +133,9 @@ class Server:
 
             elif request_type in ['GET_ALL_USERS']:
                 response = self.manager_commands.handle_request(request_type, payload)
+
+            elif request_type == 'PLAY_VIDEO':
+                response = self.handle_play_video(payload)
 
             # --- Sending Response to Client using Protocol ---
             Protocol.send(client_socket, json.dumps(response))

@@ -2,27 +2,211 @@ import socket
 import json
 import os
 import sys
+import threading
+import time
+import wx
 from Protocol import Protocol
-#from Video_player import play_video_with_system_audio
-from newPlayVideo import play_video_wx
-
-# Import Login UI
-try:
-    from Login_UI import LoginFrame
-    import wx
-
-    GUI_AVAILABLE = True
-except ImportError:
-    GUI_AVAILABLE = False
-    print("Warning: wxPython not available. GUI login disabled.")
+from Video_Player_Client import run_video_player_client
 
 # --- Configuration ---
 HOST = '127.0.0.1'
 PORT = 5000
+VIDEO_FOLDER = "videos"
 
-# Get the absolute path to the videos folder (in the same directory as Client.py)
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-VIDEO_FOLDER = os.path.join(SCRIPT_DIR, "videos")
+
+class LoginSignupFrame(wx.Frame):
+    """GUI for Login and Signup"""
+    
+    def __init__(self, client_instance):
+        super().__init__(
+            None,
+            title="Tennis Social - Login",
+            size=wx.Size(450, 400)
+        )
+        self.client = client_instance
+        self.login_successful = False
+        
+        panel = wx.Panel(self)
+        panel.SetBackgroundColour(wx.Colour(245, 245, 245))
+        
+        # Main sizer
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        # Title
+        title_font = wx.Font(18, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
+        title = wx.StaticText(panel, label="🎾 Tennis Social")
+        title.SetFont(title_font)
+        title.SetForegroundColour(wx.Colour(40, 120, 80))
+        main_sizer.Add(title, 0, wx.ALL | wx.CENTER, 20)
+        
+        # Notebook for tabs
+        notebook = wx.Notebook(panel)
+        
+        # --- Login Tab ---
+        login_panel = wx.Panel(notebook)
+        login_sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        # Username
+        login_sizer.Add(wx.StaticText(login_panel, label="Username:"), 0, wx.LEFT | wx.TOP, 10)
+        self.login_username = wx.TextCtrl(login_panel, size=wx.Size(300, 30))
+        login_sizer.Add(self.login_username, 0, wx.ALL | wx.EXPAND, 10)
+        
+        # Password
+        login_sizer.Add(wx.StaticText(login_panel, label="Password:"), 0, wx.LEFT, 10)
+        self.login_password = wx.TextCtrl(login_panel, size=wx.Size(300, 30), style=wx.TE_PASSWORD | wx.TE_PROCESS_ENTER)
+        login_sizer.Add(self.login_password, 0, wx.ALL | wx.EXPAND, 10)
+        
+        # Login button
+        login_btn = wx.Button(login_panel, label="Login", size=wx.Size(300, 40))
+        login_btn.SetBackgroundColour(wx.Colour(76, 175, 80))
+        login_btn.SetForegroundColour(wx.WHITE)
+        login_btn.Bind(wx.EVT_BUTTON, self.on_login)
+        login_sizer.Add(login_btn, 0, wx.ALL | wx.EXPAND, 10)
+        
+        # Status label for login
+        self.login_status = wx.StaticText(login_panel, label="")
+        self.login_status.SetForegroundColour(wx.Colour(200, 0, 0))
+        login_sizer.Add(self.login_status, 0, wx.ALL | wx.CENTER, 10)
+        
+        login_panel.SetSizer(login_sizer)
+        notebook.AddPage(login_panel, "Login")
+        
+        # --- Signup Tab ---
+        signup_panel = wx.Panel(notebook)
+        signup_sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        # Username
+        signup_sizer.Add(wx.StaticText(signup_panel, label="Username:"), 0, wx.LEFT | wx.TOP, 10)
+        self.signup_username = wx.TextCtrl(signup_panel, size=wx.Size(300, 30))
+        signup_sizer.Add(self.signup_username, 0, wx.ALL | wx.EXPAND, 10)
+        
+        # Password
+        signup_sizer.Add(wx.StaticText(signup_panel, label="Password:"), 0, wx.LEFT, 10)
+        self.signup_password = wx.TextCtrl(signup_panel, size=wx.Size(300, 30), style=wx.TE_PASSWORD)
+        signup_sizer.Add(self.signup_password, 0, wx.ALL | wx.EXPAND, 10)
+        
+        # Admin checkbox
+        self.admin_checkbox = wx.CheckBox(signup_panel, label="Register as Manager/Admin")
+        signup_sizer.Add(self.admin_checkbox, 0, wx.ALL, 10)
+        
+        # Admin secret (initially hidden)
+        signup_sizer.Add(wx.StaticText(signup_panel, label="Admin Secret Key:"), 0, wx.LEFT, 10)
+        self.admin_secret = wx.TextCtrl(signup_panel, size=wx.Size(300, 30), style=wx.TE_PASSWORD)
+        self.admin_secret.Enable(False)
+        signup_sizer.Add(self.admin_secret, 0, wx.ALL | wx.EXPAND, 10)
+        
+        # Bind checkbox event
+        self.admin_checkbox.Bind(wx.EVT_CHECKBOX, self.on_admin_checkbox)
+        
+        # Signup button
+        signup_btn = wx.Button(signup_panel, label="Sign Up", size=wx.Size(300, 40))
+        signup_btn.SetBackgroundColour(wx.Colour(33, 150, 243))
+        signup_btn.SetForegroundColour(wx.WHITE)
+        signup_btn.Bind(wx.EVT_BUTTON, self.on_signup)
+        signup_sizer.Add(signup_btn, 0, wx.ALL | wx.EXPAND, 10)
+        
+        # Status label for signup
+        self.signup_status = wx.StaticText(signup_panel, label="")
+        self.signup_status.SetForegroundColour(wx.Colour(200, 0, 0))
+        signup_sizer.Add(self.signup_status, 0, wx.ALL | wx.CENTER, 10)
+        
+        signup_panel.SetSizer(signup_sizer)
+        notebook.AddPage(signup_panel, "Sign Up")
+        
+        main_sizer.Add(notebook, 1, wx.ALL | wx.EXPAND, 10)
+        
+        panel.SetSizer(main_sizer)
+        
+        self.Centre()
+        self.Show()
+        
+        # Bind Enter key for login
+        self.login_password.Bind(wx.EVT_TEXT_ENTER, self.on_login)
+    
+    def on_admin_checkbox(self, event):
+        """Enable/disable admin secret field based on checkbox"""
+        self.admin_secret.Enable(self.admin_checkbox.GetValue())
+    
+    def on_login(self, event):
+        """Handle login button click"""
+        username = self.login_username.GetValue().strip()
+        password = self.login_password.GetValue().strip()
+        
+        if not username or not password:
+            self.login_status.SetLabel("⚠ Please enter username and password")
+            return
+        
+        self.login_status.SetLabel("Logging in...")
+        self.login_status.SetForegroundColour(wx.Colour(100, 100, 100))
+        wx.SafeYield()
+        
+        response = self.client._send_request('LOGIN', {
+            'username': username,
+            'password': password
+        })
+        
+        if response.get('status') == 'success':
+            self.client.username = username
+            
+            # Get user admin status
+            users_res = self.client._send_request('GET_ALL_USERS', {})
+            if users_res.get('users'):
+                for user in users_res['users']:
+                    if user['username'] == username:
+                        self.client.is_admin = user['is_admin']
+                        break
+            
+            self.login_status.SetLabel("✓ Login successful!")
+            self.login_status.SetForegroundColour(wx.Colour(0, 150, 0))
+            self.login_successful = True
+            
+            wx.CallLater(500, self.Close)
+        else:
+            self.login_status.SetLabel(f"✗ {response.get('message', 'Login failed')}")
+            self.login_status.SetForegroundColour(wx.Colour(200, 0, 0))
+    
+    def on_signup(self, event):
+        """Handle signup button click"""
+        username = self.signup_username.GetValue().strip()
+        password = self.signup_password.GetValue().strip()
+        is_admin = 1 if self.admin_checkbox.GetValue() else 0
+        
+        if not username or not password:
+            self.signup_status.SetLabel("⚠ Please enter username and password")
+            return
+        
+        if is_admin and not self.admin_secret.GetValue().strip():
+            self.signup_status.SetLabel("⚠ Admin secret key required")
+            return
+        
+        self.signup_status.SetLabel("Creating account...")
+        self.signup_status.SetForegroundColour(wx.Colour(100, 100, 100))
+        wx.SafeYield()
+        
+        payload = {
+            'username': username,
+            'password': password,
+            'is_admin': is_admin
+        }
+        
+        if is_admin:
+            payload['admin_secret'] = self.admin_secret.GetValue().strip()
+        
+        response = self.client._send_request('SIGNUP', payload)
+        
+        if response.get('status') == 'success':
+            self.signup_status.SetLabel("✓ Account created! Please login.")
+            self.signup_status.SetForegroundColour(wx.Colour(0, 150, 0))
+            
+            # Clear fields
+            self.signup_username.SetValue("")
+            self.signup_password.SetValue("")
+            self.admin_secret.SetValue("")
+            self.admin_checkbox.SetValue(False)
+            self.admin_secret.Enable(False)
+        else:
+            self.signup_status.SetLabel(f"✗ {response.get('message', 'Signup failed')}")
+            self.signup_status.SetForegroundColour(wx.Colour(200, 0, 0))
 
 
 class Client:
@@ -37,12 +221,8 @@ class Client:
         self.username = None
         self.is_admin = 0
 
-        # Create videos folder if it doesn't exist
         if not os.path.exists(VIDEO_FOLDER):
             os.makedirs(VIDEO_FOLDER)
-            print(f"📁 Created videos folder at: {VIDEO_FOLDER}")
-        else:
-            print(f"📁 Videos folder found at: {VIDEO_FOLDER}")
 
     def _send_request(self, request_type, payload):
         """
@@ -78,97 +258,6 @@ class Client:
         except Exception as e:
             print(f"An unexpected error occurred during request: {e}")
             return {"status": "error", "message": f"Network Error: {e}"}
-
-    # --- Authentication Methods ---
-
-    def signup(self):
-        """Handles user registration."""
-        print("\n--- Signup ---")
-        username = input("Enter username: ").strip()
-        password = input("Enter password: ").strip()
-
-        is_admin_input = input("Register as admin? (y/N): ").strip().lower()
-        is_admin = 0
-        admin_secret = None
-
-        if is_admin_input == 'y':
-            admin_secret = input("Enter admin secret key: ").strip()
-            is_admin = 1
-
-        payload = {
-            'username': username,
-            'password': password,
-            'is_admin': is_admin
-        }
-
-        if is_admin == 1:
-            payload['admin_secret'] = admin_secret
-
-        response = self._send_request('SIGNUP', payload)
-
-        if response.get('status') == 'success':
-            print(f"✓ {response['message']}")
-        else:
-            print(f"✗ Signup failed: {response.get('message', 'Unknown error')}")
-
-    def login_console(self):
-        """Handles user login via console."""
-        print("\n--- Login ---")
-        username = input("Enter username: ").strip()
-        password = input("Enter password: ").strip()
-
-        response = self._send_request('LOGIN', {'username': username, 'password': password})
-
-        if response.get('status') == 'success':
-            self.username = username
-            self.is_admin = response.get('is_admin', 0)  # ✅ קבלת סטטוס אדמין מהתשובה
-            return True
-        else:
-            print(f"✗ Login failed: {response.get('message', 'Unknown error')}")
-            return False
-
-    def login_gui(self):
-        """Handles user login with GUI"""
-        if not GUI_AVAILABLE:
-            print("GUI not available. Please use console login.")
-            return False
-
-        app = wx.App()
-        login_frame = LoginFrame()
-        login_frame.Show()
-        app.MainLoop()
-
-        # After the GUI closes, check if login was successful
-        if login_frame.login_success and login_frame.logged_in_username:
-            self.username = login_frame.logged_in_username
-
-            # ✅ תיקון: נשלוף את הסטטוס מבקשת LOGIN חוזרת במקום GET_ALL_USERS
-            login_response = self._send_request('LOGIN', {
-                'username': self.username,
-                'password': ''  # אנחנו כבר מחוברים, אבל צריך לבדוק סטטוס
-            })
-
-            # אם יש is_admin בתשובה - נשתמש בו
-            if login_response.get('is_admin') is not None:
-                self.is_admin = login_response.get('is_admin', 0)
-            else:
-                # אחרת ננסה לקבל מ-GET_ALL_USERS (רק אם זה עובד)
-                try:
-                    users_res = self._send_request('GET_ALL_USERS', {})
-                    if users_res.get('status') == 'success' and users_res.get('users'):
-                        for user in users_res['users']:
-                            if user['username'] == self.username:
-                                self.is_admin = user['is_admin']
-                                break
-                except:
-                    # אם נכשל - פשוט לא אדמין
-                    self.is_admin = 0
-
-            print(
-                f"\nWelcome {self.username}! You are logged in as a {'manager' if self.is_admin else 'regular user'}.")
-            return True
-
-        return False
 
     # --- Video Management Methods ---
 
@@ -263,26 +352,21 @@ class Client:
         choice = input("Enter choice: ").strip()
 
         if choice == '1':
-            """print(f"▶ Playing video: {video_title}...")
-            video_path = os.path.join(VIDEO_FOLDER, video_title)
-            play_video_with_system_audio(video_path)
-            print(f"ℹ Finished playing: {video_title}")
-            print(video_path)"""
-            video_path = os.path.join(VIDEO_FOLDER, video_title)
-            print(video_path)
-
-            # Check if video file exists before trying to play
-            if not os.path.exists(video_path):
-                print(f"❌ Error: Video file not found at: {video_path}")
-                print(f"📂 Please make sure the file '{video_title}' exists in the videos folder.")
-                input("Press Enter to continue...")
-                return
-
             print(f"▶ Playing video: {video_title}...")
-            print(f"📂 Path: {video_path}")
-            play_video_wx(video_path)
-            #play_video_with_system_audio(video_path)
-            print(f"ℹ Finished playing: {video_title}")
+            
+            # Request server to start streaming this video
+            response = self._send_request('PLAY_VIDEO', {'video_title': video_title})
+            
+            if response.get('status') == 'success':
+                # Wait for server to initialize
+                time.sleep(2)
+                
+                # Start client player (blocking until video ends)
+                run_video_player_client()
+                
+                print(f"ℹ Finished playing: {video_title}")
+            else:
+                print(f"✗ Failed to play video: {response.get('message', 'Unknown error')}")
 
         elif choice == '2':
             self.toggle_like(video_title)
@@ -415,16 +499,20 @@ class Client:
 
     def run(self):
         """Main client application loop."""
-
-        # Automatically open GUI Login
-        print("\n=== Tennis Social Network ===")
-        print("Opening login window...")
-
-        if not self.login_gui():
+        
+        # Show GUI login/signup
+        app = wx.App()
+        login_frame = LoginSignupFrame(self)
+        app.MainLoop()
+        
+        # Check if login was successful
+        if not login_frame.login_successful or not self.username:
             print("Login cancelled or failed. Exiting...")
-            sys.exit(0)
+            return
+        
+        print(f"\n✓ Welcome {self.username}! You are logged in as a {'regular user' if not self.is_admin else 'manager'}.")
 
-        # Main menu loop (after successful login)
+        # Continue with console menu
         while True:
             print("\n--- Main Menu ---")
             print("1. Videos (View/Upload)")
@@ -467,5 +555,10 @@ class Client:
 
 
 if __name__ == '__main__':
-    client_app = Client()
-    client_app.run()
+    try:
+        from Video_Player_Client import run_video_player_client
+        client_app = Client()
+        client_app.run()
+    except ImportError as e:
+        print(f"✗ CRITICAL ERROR: Required video player modules missing: {e}")
+        sys.exit(1)
