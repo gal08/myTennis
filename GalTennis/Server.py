@@ -3,6 +3,9 @@ import json
 import threading
 import sqlite3
 import os
+
+import story_saver_server
+# ייבוא המודולות החסרות (חיוניות להרצת הקוד)
 from Protocol import Protocol
 from Authication import Authentication
 from Videos_Handler import VideosHandler
@@ -13,7 +16,7 @@ from Manger_commands import ManagerCommands
 from Video_Player_Server import run_video_player_server
 
 # --- Configuration ---
-HOST = '127.0.0.1'
+HOST = '0.0.0.0'
 PORT = 5000
 DB_FILE = 'users.db'
 VIDEO_FOLDER = "videos"
@@ -70,16 +73,16 @@ class Server:
     def handle_play_video(self, payload):
         """Handles PLAY_VIDEO request by starting the video streaming server."""
         video_title = payload.get('video_title')
-        
+
         if not video_title:
             return {"status": "error", "message": "Video title not provided"}
-        
+
         video_path = os.path.join(VIDEO_FOLDER, video_title)
-        
+
         # Check if video file exists
         if not os.path.exists(video_path):
             return {"status": "error", "message": f"Video file not found: {video_title}"}
-        
+
         try:
             # Start video streaming server in background thread
             self.video_server_thread = threading.Thread(
@@ -88,10 +91,10 @@ class Server:
                 daemon=True
             )
             self.video_server_thread.start()
-            
+
             print(f"Video streaming server started for: {video_title}")
             return {"status": "success", "message": "Video server started. Ready to stream."}
-            
+
         except Exception as e:
             print(f"Error starting video server: {e}")
             return {"status": "error", "message": f"Failed to start video server: {e}"}
@@ -102,16 +105,40 @@ class Server:
         and sends a response using Protocol.
         """
         try:
-            # Receive data using Protocol.recv()
+            print("hello")
+
+            # 1. קבלת נתונים גולמיים
             data_raw = Protocol.recv(client_socket)
 
-            if not data_raw:
-                return
+            # --- התיקון הקריטי לשגיאת JSONDecodeError: הסרת תווית האורך ---
+            # מוצאים את האינדקס של הסוגר המסולסל הפותח הראשון '{'.
+            start_index = data_raw.find('{')
 
-            # Client sends JSON
-            request_data = json.loads(data_raw)
+            if start_index != -1:
+                # חותכים את המחרוזת החל מהסוגר המסולסל.
+                data_raw_json = data_raw[start_index:]
+            else:
+                # אם לא נמצא סוגר פותח, מעלים שגיאה
+                raise ValueError("JSON start character '{' not found.")
+
+            data_raw_json = data_raw[start_index:]
+            # מנקים תווים לבנים מיותרים מהסוף.
+            data_raw_json = data_raw_json.strip()
+
+            print(f"[DEBUG] Cleaned JSON data: {data_raw_json[:200]}...")
+
+            # 2. ניתוח הנתונים הנקיים
+            request_data = json.loads(data_raw_json)
+            # -------------------------------------------------------------
+
+            print(f"[DEBUG] Parsed request_data: {request_data}")
+
             request_type = request_data.get('type')
+            print(f"[DEBUG] Request type: {request_type}")
+
             payload = request_data.get('payload', {})
+            print(f"[DEBUG] Payload: {payload}")
+            print(f"[DEBUG] Payload type: {type(payload)}")
 
             response = {"status": "error", "message": "Unrecognized request"}
 
@@ -137,16 +164,24 @@ class Server:
             elif request_type == 'PLAY_VIDEO':
                 response = self.handle_play_video(payload)
 
+            elif request_type == 'PLAY_STORIES':
+                response = self.handle_play_video(payload)
+
             # --- Sending Response to Client using Protocol ---
             Protocol.send(client_socket, json.dumps(response))
+            if request_type == 'ADD_STORY':
+                story_saver_server.run()
+
 
         except json.JSONDecodeError:
-            print("Received non-JSON data from client.")
+            print("Received non-JSON data or truncated JSON from client.")
             Protocol.send(client_socket, json.dumps({"status": "error", "message": "Invalid request format."}))
         except Exception as e:
+            # מטפל גם ב-ValueError (אם לא נמצא '{') ושגיאות אחרות
             print(f"Error handling client: {e}")
             try:
-                Protocol.send(client_socket, json.dumps({"status": "error", "message": f"Server processing error: {e}"}))
+                Protocol.send(client_socket,
+                              json.dumps({"status": "error", "message": f"Server processing error: {e}"}))
             except:
                 pass
         finally:
