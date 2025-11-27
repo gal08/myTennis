@@ -10,7 +10,7 @@ import os
 import webbrowser
 import sys
 import subprocess
-
+from Audio_Recorder import AudioRecorder
 
 # =======================================================================
 # 1. INIT CAMERA THREAD - OPTIMIZED
@@ -26,6 +26,7 @@ class InitCameraThread(threading.Thread):
         super().__init__(daemon=True)
         self.parent_frame = parent_frame
         self.start()
+
 
     def run(self):
         # Try different backends for faster initialization
@@ -152,6 +153,8 @@ class StoryCameraFrame(wx.Frame):
         self.username = username
         self.on_post_callback = on_post_callback
         self.closed_callback = closed_callback
+        self.audio_recorder = AudioRecorder()
+        self.temp_audio_path = None
 
         # 🎯 הגדרת נתיב התיקייה הנוכחית של הקובץ המורץ
         if hasattr(sys, '_MEIPASS'):
@@ -492,17 +495,16 @@ class StoryCameraFrame(wx.Frame):
         self.enter_preview_mode()
 
     def start_recording(self):
-        """Start video recording"""
+        """Start video recording with audio"""
         if self._current_frame_cache is None or self.is_recording:
             return
 
-        # 🎯 יצירת קובץ זמני עם סיומת AVI בתיקייה הנוכחית
+        # צור קובץ זמני לוידאו
         temp_filename = "temp_story_" + str(int(time.time())) + ".avi"
         self.temp_video_path = os.path.join(self.current_dir, temp_filename)
 
         h, w = self._current_frame_cache.shape[:2]
         fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-        # שומרים את הקובץ הזמני בנתיב הנוכחי
         self.video_writer = cv2.VideoWriter(self.temp_video_path, fourcc, 30.0, (w, h))
 
         if not self.video_writer.isOpened():
@@ -512,17 +514,25 @@ class StoryCameraFrame(wx.Frame):
             self.button_container.Refresh()
             return
 
+        # התחל הקלטת אודיו
+        self.temp_audio_path = os.path.join(self.current_dir, "temp_audio.wav")
+        self.audio_recorder.start_recording()
+
         self.is_recording = True
         self.recording_start_time = time.time()
         self.recording_indicator.Show()
 
     def stop_recording(self):
-        """Stop video recording"""
+        """Stop video recording and merge with audio"""
         if not self.is_recording:
             return
 
         self.is_recording = False
         self.recording_indicator.Hide()
+
+        # עצור הקלטת אודיו
+        self.audio_recorder.stop_recording()
+        audio_saved = self.audio_recorder.save_audio(self.temp_audio_path)
 
         if self.video_writer:
             self.video_writer.release()
@@ -534,28 +544,26 @@ class StoryCameraFrame(wx.Frame):
             wx.MessageBox("Failed to save video file", "Error", wx.OK | wx.ICON_ERROR)
             return
 
-        # 🎯 שינוי שם הקובץ ל-story.mp4 בתיקייה הנוכחית
         temp_avi_path = self.temp_video_path
         permanent_video_path = os.path.join(self.current_dir, "story.mp4")
 
         try:
-            # אם הקובץ הקבוע story.mp4 קיים, מחק אותו
-            if os.path.exists(permanent_video_path):
-                os.remove(permanent_video_path)
+            # ⭐ המרה נכונה לMP4 עם ffmpeg
+            if audio_saved and os.path.exists(self.temp_audio_path):
+                # יש אודיו - מזג וידאו ואודיו
+                self._merge_video_audio(temp_avi_path, self.temp_audio_path, permanent_video_path)
+            else:
+                # אין אודיו - המר רק את הווידאו
+                self._convert_video_to_mp4(temp_avi_path, permanent_video_path)
 
-            # שנה את שם הקובץ הזמני לקובץ הקבוע
-            os.rename(temp_avi_path, permanent_video_path)
-            # עדכן את הנתיב הקבוע במשתנה, כך שכל פונקציה אחרת תשתמש בו
             self.temp_video_path = permanent_video_path
 
         except Exception as e:
-            wx.MessageBox(f"Failed to rename video file: {e}", "Error", wx.OK | wx.ICON_ERROR)
-            # אם נכשל, נשמור את הנתיב הזמני למקרה של צורך בניקוי
+            wx.MessageBox(f"Failed to process video: {e}", "Error", wx.OK | wx.ICON_ERROR)
             self.temp_video_path = temp_avi_path
             return
 
-        # Load first frame for preview
-        # נשתמש בנתיב המעודכן (story.mp4)
+        # טען פריים ראשון לתצוגה מקדימה
         cap = cv2.VideoCapture(self.temp_video_path)
         ret, frame = cap.read()
         cap.release()
@@ -574,6 +582,84 @@ class StoryCameraFrame(wx.Frame):
 
         self.preview_type = 'video'
         self.enter_preview_mode()
+
+    def _convert_video_to_mp4(self, input_path, output_path):
+        """המרת וידאו ל-MP4 באמצעות ffmpeg (ללא אודיו)"""
+        import subprocess
+
+        try:
+            cmd = [
+                'ffmpeg',
+                '-y',  # overwrite output
+                '-i', input_path,  # input video
+                '-c:v', 'libx264',  # H.264 codec
+                '-preset', 'ultrafast',  # מהיר יותר
+                '-crf', '23',  # איכות
+                '-an',  # no audio
+                output_path
+            ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True
+            )
+
+            print("Video converted to MP4 successfully")
+
+            # מחק קובץ זמני
+            if os.path.exists(input_path):
+                os.remove(input_path)
+
+        except subprocess.CalledProcessError as e:
+            print(f"FFmpeg conversion error: {e.stderr.decode()}")
+            raise
+        except FileNotFoundError:
+            print("FFmpeg not found. Cannot convert video.")
+            raise
+
+    def _merge_video_audio(self, video_path, audio_path, output_path):
+        """מיזוג וידאו ואודיו באמצעות ffmpeg"""
+        import subprocess
+
+        try:
+            cmd = [
+                'ffmpeg',
+                '-y',  # overwrite output
+                '-i', video_path,  # input video
+                '-i', audio_path,  # input audio
+                '-c:v', 'libx264',  # H.264 codec לווידאו
+                '-preset', 'ultrafast',  # מהיר יותר
+                '-crf', '23',  # איכות
+                '-c:a', 'aac',  # AAC codec לאודיו
+                '-b:a', '192k',  # bitrate לאודיו
+                '-strict', 'experimental',
+                '-shortest',  # חתוך לפי הקצר ביותר (אודיו/וידאו)
+                output_path
+            ]
+
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True
+            )
+
+            print("Video and audio merged successfully")
+
+            # מחק קבצים זמניים
+            if os.path.exists(video_path):
+                os.remove(video_path)
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
+
+        except subprocess.CalledProcessError as e:
+            print(f"FFmpeg merge error: {e.stderr.decode()}")
+            raise
+        except FileNotFoundError:
+            print("FFmpeg not found. Cannot merge audio and video.")
+            raise
 
     def enter_preview_mode(self):
         """Switch to preview mode"""
@@ -700,19 +786,20 @@ class StoryCameraFrame(wx.Frame):
         if self.is_recording:
             self.stop_recording()
 
-        # ודא שהקובץ story.mp4 נשמר רק אם הוא נמצא בנתיב הנוכחי
-        if self.temp_video_path and os.path.exists(self.temp_video_path) and 'story.mp4' in self.temp_video_path:
-            # משאירים את story.mp4 בתיקייה הנוכחית
-            pass
+        # נקה קבצים זמניים
+        if self.temp_audio_path and os.path.exists(self.temp_audio_path):
+            try:
+                os.remove(self.temp_audio_path)
+            except:
+                pass
 
+        if self.temp_video_path and os.path.exists(self.temp_video_path) and 'story.mp4' in self.temp_video_path:
+            pass
         elif self.temp_video_path and os.path.exists(self.temp_video_path):
-            # אם מדובר בנתיב זמני כלשהו (למשל, AVI אם ה-rename נכשל), נמחק אותו
             try:
                 os.remove(self.temp_video_path)
             except:
                 pass
-
-        # ... (שאר ניקוי המשתנים) ...
 
         if self.camera_reader_thread:
             self.camera_reader_thread.stop()
@@ -723,14 +810,16 @@ class StoryCameraFrame(wx.Frame):
         if self.video_writer:
             self.video_writer.release()
 
-        self.temp_video_path = None  # ניקוי המשתנה
+        # נקה משאבי אודיו
+        self.audio_recorder.cleanup()
 
-        # Execute the closed_callback to unblock Client.py
+        self.temp_video_path = None
+        self.temp_audio_path = None
+
         if self.closed_callback:
             self.closed_callback()
 
         self.Destroy()
-
 
 # =======================================================================
 # 5. TEST EXECUTION BLOCK
