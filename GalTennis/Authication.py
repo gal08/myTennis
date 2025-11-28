@@ -1,30 +1,22 @@
-import sqlite3  # Import the SQLite database module.
+import sqlite3
+import hashlib
 
 # DB configuration
 DB_NAME = 'users.db'
 
 # ADMIN SECRET KEY - Change this to your own secret!
 # In production, this should be in an environment variable or config file
-ADMIN_SECRET_KEY = "SecretKey"  # Define the hardcoded admin secret key
-
-ADMIN = 1
-ADMIN_STATUS_INDEX = 0
-REGULAR_USER_FLAG = 0
+ADMIN_SECRET_KEY = "SecretKey"
 
 
-# Define the Authentication class for user management.
 class Authentication:
 
-    def __init__(self):  # Class constructor
-        self._initialize_db()  # Initialize the database upon object creation.
+    def __init__(self):
+        self._initialize_db()
 
-    # Method to ensure the 'users' table exists.
-    @staticmethod
-    def _initialize_db():
+    def _initialize_db(self):
         """Ensures the 'users' table exists."""
-        # Connect to the SQLite database.
         conn = sqlite3.connect(DB_NAME)
-        # Create a cursor object.
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -34,19 +26,16 @@ class Authentication:
                 is_admin INTEGER NOT NULL
             )
         ''')
-        conn.commit()  # Save changes to the database.
-        conn.close()  # Close the database connection.
+        conn.commit()
+        conn.close()
 
-    # Method to check the admin secret key.
-    @staticmethod
-    def _verify_admin_secret(provided_secret):
+    def _verify_admin_secret(self, provided_secret):
         """
         Verifies if the provided admin secret matches the stored secret.
         Returns True if valid, False otherwise.
         """
-        if not provided_secret:  # Check if a secret was provided.
-            return False  # Return False if none was provided.
-        # Return result of secret key comparison.
+        if not provided_secret:
+            return False
         return provided_secret == ADMIN_SECRET_KEY
 
     def signup(self, username, password, is_admin=0, admin_secret=None):
@@ -55,15 +44,15 @@ class Authentication:
         If is_admin=1, requires valid admin_secret to be provided.
         """
         # Security check: If trying to register as admin, verify the secret
-        if is_admin == ADMIN:  # Check if the user attempts to register as admin
-            if not self._verify_admin_secret(admin_secret):  # Verify the admin secret.
+        if is_admin == 1:
+            if not self._verify_admin_secret(admin_secret):
                 return {
                     "status": "error",
                     "message": "Invalid admin secret key. Access denied."
                 }
 
-        conn = sqlite3.connect(DB_NAME)  # Connect to the database.
-        cursor = conn.cursor()  # Create a cursor.
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
 
         try:
             # Insert user with plain text password (as per original code)
@@ -74,24 +63,23 @@ class Authentication:
                 "status": "success",
                 "message": f"Signup successful as {'admin' if is_admin else 'regular user'}"
             }
-        except sqlite3.IntegrityError:  # Handle case where username already exists
+        except sqlite3.IntegrityError:
             return {"status": "error", "message": "Username already exists"}
         finally:
             conn.close()
 
-    @staticmethod
-    def login(username, password):
+    def login(self, username, password):
         """Performs login and verification."""
-        conn = sqlite3.connect(DB_NAME)  # Connect to the database.
-        cursor = conn.cursor()  # Create a cursor.
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
 
         # Check username and password
         cursor.execute("SELECT is_admin FROM users WHERE username=? AND password=?", (username, password))
-        user_data = cursor.fetchone()  # Fetch the result (is_admin value).
-        conn.close()  # Close the database connection.
+        user_data = cursor.fetchone()
+        conn.close()
 
-        if user_data:  # Check if a user was found.
-            is_admin = user_data[ADMIN_STATUS_INDEX]  # Extract the admin status.
+        if user_data:
+            is_admin = user_data[0]
             return {
                 "status": "success",
                 "message": "Login successful",
@@ -104,19 +92,15 @@ class Authentication:
         """Handles authentication requests from the server."""
         username = payload.get('username')
         password = payload.get('password')
-        # Check for missing required fields.
+
         if not username or not password:
             return {"status": "error", "message": "Missing username or password in request."}
 
         if request_type == 'SIGNUP':
-            # Extract admin flag (default 0)
-            is_admin = payload.get('is_admin', REGULAR_USER_FLAG)
-            # Extract admin secret
+            is_admin = payload.get('is_admin', 0)
             admin_secret = payload.get('admin_secret', None)
-            # Call signup method.
             return self.signup(username, password, is_admin, admin_secret)
         elif request_type == 'LOGIN':
-            # Call login method
             return self.login(username, password)
 
         return {"status": "error", "message": "Unknown authentication request"}

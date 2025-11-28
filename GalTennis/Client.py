@@ -5,11 +5,11 @@ import sys
 import threading
 import time
 import wx
+import base64
 
 import transfer_story_to_server
 from Protocol import Protocol
 from Video_Player_Client import run_video_player_client
-import Story_Viewer  # ⭐ חדש - להצגת Stories
 
 # --- Import the Story camera module we integrated ---
 import Story_camera
@@ -227,6 +227,8 @@ class Client:
         self.port = PORT
         self.username = None
         self.is_admin = 0
+        #self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        #self.socket.connect((self.host, self.port))
         if not os.path.exists(VIDEO_FOLDER):
             os.makedirs(VIDEO_FOLDER)
 
@@ -245,6 +247,7 @@ class Client:
             })
 
             # Send data to the server using Protocol
+            #Protocol.send(self.socket, request_data)
             Protocol.send(client_socket, request_data)
             # Receive the response using Protocol
             response_data = Protocol.recv(client_socket)
@@ -427,32 +430,99 @@ class Client:
     # --- Stories Management ---
 
     def display_stories(self):
-        """⭐ מציג את ה-Stories בממשק גרפי חדש"""
+        """Retrieves and displays all active stories (last 24 hours)."""
         response = self._send_request('GET_STORIES', {})
 
+        print("\n--- Live Stories (Last 24h) ---")
+
         if response.get('status') != 'success' or not response.get('stories'):
-            wx.MessageBox(
-                "No active stories found",
-                "Stories",
-                wx.OK | wx.ICON_INFORMATION
-            )
+            print(f"✗ Could not retrieve stories: {response.get('message', 'No active stories found.')}")
             return
 
         stories = response['stories']
+        for i, story in enumerate(stories):
+            print(f"[{i + 1}] {story['username']} posted a story at {story['timestamp']}")
 
-        # פתיחת מציג Stories בממשק גרפי
-        Story_Viewer.show_stories(None, stories, self.username)
+        while True:
+            selection = input("Enter story number to view content, or (B)ack: ").strip().upper()
+            if selection == 'B':
+                return
+
+            try:
+                index = int(selection) - 1
+                if 0 <= index < len(stories):
+                    print(f"\n--- Story Content from {stories[index]['username']} ---")
+                    print(f"💬 {stories[index]['content']}")
+                    print("---------------------------------")
+                    break
+                else:
+                    print("Invalid number.")
+            except ValueError:
+                print("Invalid input.")
+
+    """def add_story(self):
+        Sends an ADD_STORY request to the server (text-only fallback).
+        print("\n--- Post a New Story (text fallback) ---")
+        content = input("Enter story text (e.g., 'Great practice today!'): ").strip()
+
+        if not content:
+            print("Story content cannot be empty.")
+            return
+
+        payload = {
+            'username': self.username,
+            'content': content
+        }
+
+        response = self._send_request('ADD_STORY', payload)
+
+        if response.get('status') == 'success':
+            print(f"✓ {response['message']}")
+        else:
+            print(f"✗ Failed to post story: {response.get('message', 'Unknown error')}")"""
 
     def on_story_post_callback(self, caption, media_type, media_data):
-        print("hi")
+        """
+        media_type: "image" או "video"
+        media_data: Base64 string של הקובץ
+        """
+        print("Posting story...")
+
+        # קובץ זמני בהתאם לסוג המדיה
+        if media_type == "video":
+            file_name = "story.mp4"
+        else:
+            file_name = "story.jpg"
+
+        # המרת Base64 לבייטס ושמירה לקובץ
+        file_bytes = base64.b64decode(media_data)
+        with open(file_name, "wb") as f:
+            f.write(file_bytes)
+
+        # 1. שליחת הסיפור לשרת האפליקציה (מתעד ב-DB)
         payload = {
             "username": self.username,
-            "filename": ""  # server will generate
+            "filename": file_name
         }
         res = self._send_request("ADD_STORY", payload)
-        time.sleep(5)
-        transfer_story_to_server.run('story.mp4')
-        print("hi2")
+
+        if res.get('status') != 'success':
+            print(f"✗ Failed to register story: {res.get('message')}")
+            return
+
+        # 2. המתן שהשרת המדיה יעלה
+        print("Waiting for media server to start...")
+        time.sleep(3)  # נותן זמן לשרת המדיה להתחיל
+
+        # 3. שליחה לשרת המדיה
+        try:
+            import transfer_story_to_server
+            transfer_story_to_server.run(file_name, self.username)
+            print("✓ Story posted successfully!")
+        except Exception as e:
+            print(f"✗ Failed to upload media: {e}")
+            print("Story metadata saved but media upload failed.")
+
 
     def open_story_camera(self):
         """
@@ -467,8 +537,10 @@ class Client:
 
         # Create a wx App and open the camera frame
         app = wx.App(False)
+        # Story_camera.StoryCameraFrame signature: (parent, username, on_post_callback, closed_callback)
         frame = Story_camera.StoryCameraFrame(None, self.username, self.on_story_post_callback, closed_callback)
         app.MainLoop()
+        frame.closed_callback()
 
         # When MainLoop exits, the camera window was closed.
         if closed_flag['closed']:
@@ -536,17 +608,18 @@ class Client:
                 print("Invalid choice.")
 
     def display_stories_menu(self):
-        """⭐ תפריט Stories מעודכן"""
+        """Menu for stories functionality."""
         print("\n--- Stories Menu ---")
-        print("1. View live stories (GUI)")  # ⭐ עודכן
+        print("1. View live stories")
         print("2. Post a new story (open camera)")
         print("3. Back to Main Menu")
 
         choice = input("Enter choice: ").strip()
 
         if choice == '1':
-            self.display_stories()  # ⭐ קורא לפונקציה המעודכנת
+            self.display_stories()
         elif choice == '2':
+            # Open the camera UI (integrated)
             self.open_story_camera()
         elif choice == '3':
             return

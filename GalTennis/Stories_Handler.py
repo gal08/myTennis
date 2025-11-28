@@ -67,6 +67,7 @@ class StoriesHandler:
         conn.commit()
         conn.close()
 
+
     def add_story(self, payload):
         """
         Adds a new story to the database.
@@ -80,14 +81,12 @@ class StoriesHandler:
         """
         username = payload.get('username')
         filename = payload.get('file_name')
-        content = payload.get('content')
-        content_type = payload.get('content_type')
-        """return {
+        return {
             "status": "success",
             "message": "story posted successfully!"
-        }"""
+        }
 
-        timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+        """timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
 
         if not all([username, content]):
             return {
@@ -154,7 +153,7 @@ class StoriesHandler:
 
         finally:
             if conn:
-                conn.close()
+                conn.close()"""
 
     def get_stories(self, payload):
         """

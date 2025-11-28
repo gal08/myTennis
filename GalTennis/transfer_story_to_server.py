@@ -1,83 +1,46 @@
 import socket
 import base64
-import os
 import json
 import struct
+import os
 from pathlib import Path
-
 
 class MediaClient:
     def __init__(self, host='127.0.0.1', port=3333):
         self.host = host
         self.port = port
 
-    def send_media(self, file_path):
-        """Send media file to server"""
+    def send_media(self, file_path, username="user"):
+        if not os.path.exists(file_path):
+            raise FileNotFoundError("file not found")
 
-        # Create a new socket for this connection
-        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # קרא את הקובץ והצפן ל-base64
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
 
-        try:
-            print(f"Connecting to {self.host}:{self.port}...")
-            client_socket.connect((self.host, self.port))
-            print("Connected!")
+        b64_data = base64.b64encode(file_bytes).decode()
 
-            # Check if file exists
-            if not os.path.exists(file_path):
-                raise FileNotFoundError(f"File {file_path} not found")
+        ext = Path(file_path).suffix.lower()
+        media_type = "video" if ext == ".mp4" else "image"
 
-            print(f"Preparing {file_path}...")
+        payload = {
+            "username": username,
+            "media_type": media_type,
+            "data": b64_data
+        }
 
-            # Read file and convert to base64
-            with open(file_path, 'rb') as file:
-                file_bytes = file.read()
-                file_base64 = base64.b64encode(file_bytes).decode('utf-8')
+        payload_bytes = json.dumps(payload).encode()
 
-            # Calculate payload size
-            payload_size = len(file_base64)
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.connect((self.host, self.port))
+        s.send(struct.pack("!I", len(payload_bytes)))
+        s.sendall(payload_bytes)
 
-            # Identify file type
-            file_extension = Path(file_path).suffix.lower()
-            media_type = 'video' if file_extension in ['.mp4', '.avi', '.mov', '.mkv'] else 'image'
-
-            # Create payload
-            payload = {
-                'size': payload_size,
-                'media_type': media_type,
-                'data': file_base64
-            }
-
-            print(f"Payload ready: {payload_size:,} characters")
-
-            # Convert payload to JSON bytes
-            payload_json = json.dumps(payload).encode('utf-8')
-            payload_length = len(payload_json)
-
-            # Send the size first (4 bytes, network byte order)
-            client_socket.send(struct.pack('!I', payload_length))
-
-            # Send the actual payload
-            print(f"Sending {payload_length:,} bytes...")
-            client_socket.sendall(payload_json)
-            print("Sent!")
-
-            # Wait for server response
-            response = client_socket.recv(1024).decode('utf-8')
-            print(f"Server response: {response}")
-
-        except Exception as e:
-            print(f"Error: {e}")
-
-        finally:
-            client_socket.close()
-            print("Connection closed\n")
+        response = s.recv(1024).decode()
+        print("Server:", response)
+        s.close()
 
 
-def run(file_path):
+def run(file_path, username="user"):
     client = MediaClient()
-    client.send_media(file_path)
-
-
-if __name__ == '__main__':
-    run("C:\CyberProject\GIT\myTennis\GalTennis\serve_hard_6.mp4")
-
+    client.send_media(file_path, username)
