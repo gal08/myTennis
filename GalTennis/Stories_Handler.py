@@ -3,18 +3,22 @@ import time
 import os
 import base64
 from datetime import datetime, timedelta
-
+from pathlib import Path
 import story_saver_server
 from Protocol import Protocol
+STORIES_FOLDER = "stories"
+
+STORY_FOLDER = "stories"
+
 
 # DB configuration
 DB_NAME = 'users.db'
-STORIES_FOLDER = "stories"
 
 
 class StoriesHandler:
     """
-    Handles ADD_STORY and GET_STORIES operations with support for text, images, and videos.
+    Handles ADD_STORY and GET_STORIES operations
+    with support for text, images, and videos.
     Stories expire after 24 hours.
     """
 
@@ -28,13 +32,14 @@ class StoriesHandler:
             os.makedirs(STORIES_FOLDER)
 
     def _initialize_db(self):
-        """Ensures the 'stories' table exists with support for different content types."""
+        """Ensures the 'stories' table exists with
+        support for different content types."""
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
 
         # Check if table exists
         cursor.execute("""
-            SELECT name FROM sqlite_master 
+            SELECT name FROM sqlite_master
             WHERE type='table' AND name='stories'
         """)
         table_exists = cursor.fetchone()
@@ -45,7 +50,9 @@ class StoriesHandler:
                 CREATE TABLE stories (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT NOT NULL,
-                    content_type TEXT NOT NULL DEFAULT 'text' CHECK(content_type IN ('text', 'image', 'video')),
+                    content_type TEXT NOT NULL
+                    DEFAULT 'text'
+                    CHECK(content_type IN ('text', 'image', 'video')),
                     content TEXT NOT NULL,
                     filename TEXT,
                     timestamp TEXT NOT NULL
@@ -58,7 +65,10 @@ class StoriesHandler:
             columns = [column[1] for column in cursor.fetchall()]
 
             if 'content_type' not in columns:
-                print("ERROR: stories table missing content_type column. Please migrate manually.")
+                print(
+                    "ERROR: stories table missing content_type column. "
+                    "Please migrate manually."
+                )
 
             if 'filename' not in columns:
                 cursor.execute("ALTER TABLE stories ADD COLUMN filename TEXT")
@@ -67,100 +77,81 @@ class StoriesHandler:
         conn.commit()
         conn.close()
 
-
     def add_story(self, payload):
         """
         Adds a new story to the database.
         Expected payload:
             {
                 'username': 'user1',
-                'content_type': 'text'|'image'|'video',
-                'content': base64 or text,
-                'filename': '' (ignored for media)
+                'filename': 'story.mp4',
+                'content_type': 'photo'|'video'
             }
         """
         username = payload.get('username')
-        filename = payload.get('file_name')
-        return {
-            "status": "success",
-            "message": "story posted successfully!"
-        }
+        filename = payload.get('filename')
+        content_type = payload.get('content_type', 'photo')
 
-        """timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-
-        if not all([username, content]):
+        if not username or not filename:
             return {
                 "status": "error",
-                "message": "Missing required fields (username or content)."
+                "message": "Missing username or filename"
             }
 
-        if content_type not in ['text', 'image', 'video']:
-            return {
-                "status": "error",
-                "message": "Invalid content type. Must be 'text', 'image', or 'video'."
-            }
+        timestamp = int(time.time())
+        ext = os.path.splitext(filename)[1]
+        unique_filename = f"{username}_{timestamp}{ext}"
 
-        conn = None
         try:
             conn = sqlite3.connect(DB_NAME)
             cursor = conn.cursor()
 
-            # Handle media: save as file, store only filename in DB
-            stored_filename = None
+            current_time = time.strftime("%Y-%m-%d %H:%M:%S")
 
-            if content_type in ['image', 'video']:
-                # Generate unique filename
-                ext = ".jpg" if content_type == "image" else ".mp4"
-                stored_filename = f"{username}_{int(time.time())}{ext}"
-                file_path = os.path.join(STORIES_FOLDER, stored_filename)
-
-                try:
-                    file_bytes = base64.b64decode(content)
-                except Exception as e:
-                    return {
-                        "status": "error",
-                        "message": f"Failed to decode base64: {e}"
-                    }
-
-                try:
-                    with open(file_path, "wb") as f:
-                        f.write(file_bytes)
-                except Exception as e:
-                    return {
-                        "status": "error",
-                        "message": f"Failed to write media file: {e}"
-                    }
-
-                stored_content = stored_filename
-
-            else:
-                # Text story only
-                stored_content = content
-
+            sql_insert = """
+                INSERT INTO stories (
+                    username,
+                    content_type,
+                    content,
+                    filename,
+                    timestamp
+                )
+                VALUES (?, ?, ?, ?, ?)
+            """
             cursor.execute(
-                "INSERT INTO stories (username, content_type, content, filename, timestamp) VALUES (?, ?, ?, ?, ?)",
-                (username, content_type, stored_content, stored_filename, timestamp)
+                sql_insert,
+                (
+                    username,
+                    content_type,
+                    filename,
+                    unique_filename,
+                    current_time,
+                )
             )
+
             conn.commit()
+            conn.close()
 
             return {
                 "status": "success",
-                "message": f"{content_type.capitalize()} story posted successfully!"
+                "message": "Story registered successfully!",
+                "unique_filename": unique_filename
             }
 
         except Exception as e:
-            return {"status": "error", "message": f"Database error: {e}"}
-
-        finally:
-            if conn:
-                conn.close()"""
+            return {
+                "status": "error",
+                "message": f"Database error: {e}"
+            }
 
     def get_stories(self, payload):
         """
         Retrieves all stories from the last 24 hours.
         Returns file paths for image/video stories.
         """
-        twenty_four_hours_ago = (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+        twenty_four_hours_ago = (
+                datetime.now() -
+                timedelta(hours=24)
+        ).strftime("%Y-%m-%d %H:%M:%S")
 
         conn = None
         try:
@@ -210,7 +201,10 @@ class StoriesHandler:
         """
         Deletes stories older than 24 hours and their media files.
         """
-        cutoff = (datetime.now() - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+        cutoff = (
+                datetime.now() -
+                timedelta(hours=24)
+        ).strftime("%Y-%m-%d %H:%M:%S")
 
         conn = None
         try:
@@ -234,11 +228,17 @@ class StoriesHandler:
                         pass
 
             # Delete DB rows
-            cursor.execute("DELETE FROM stories WHERE timestamp <= ?", (cutoff,))
+            cursor.execute(
+                "DELETE FROM stories WHERE timestamp <= ?",
+                (cutoff,)
+            )
             deleted_count = cursor.rowcount
             conn.commit()
 
-            return {"status": "success", "message": f"Deleted {deleted_count} expired stories."}
+            return (
+                {"status": "success",
+                 "message": f"Deleted {deleted_count} expired stories."}
+            )
 
         except Exception as e:
             return {"status": "error", "message": f"Database error: {e}"}
@@ -251,8 +251,98 @@ class StoriesHandler:
         if request_type == "ADD_STORY":
             return self.add_story(payload)
         if request_type == "GET_STORIES":
-            return self.get_stories(payload)
+            return self.get_stories_from_folder()
         if request_type == "DELETE_EXPIRED_STORIES":
             return self.delete_expired_stories()
 
         return {"status": "error", "message": "Unknown request type."}
+
+    def get_stories_from_folder(self):
+        """
+        Returns all stories from folder AND database (combined view)
+        """
+        try:
+            if not os.path.exists(STORY_FOLDER):
+                os.makedirs(STORY_FOLDER)
+
+            files_in_folder = set(os.listdir(STORY_FOLDER))
+            valid_extensions = [
+                '.jpg', '.jpeg', '.png',
+                '.bmp', '.mp4', '.avi',
+                '.mov'
+            ]
+            media_files = {
+                f
+                for f in files_in_folder
+                if os.path.splitext(f)[1].lower() in valid_extensions
+            }
+
+            stories = []
+
+            conn = sqlite3.connect(DB_NAME)
+            cursor = conn.cursor()
+
+            cutoff = (
+                    datetime.now() -
+                    timedelta(hours=24)
+            ).strftime("%Y-%m-%d %H:%M:%S")
+            cursor.execute("""
+                SELECT username, content_type, filename, timestamp
+                FROM stories
+                WHERE timestamp > ?
+                ORDER BY timestamp DESC
+            """, (cutoff,))
+
+            db_stories = cursor.fetchall()
+            conn.close()
+
+            for username, content_type, filename, timestamp in db_stories:
+                if filename in media_files:
+                    stories.append({
+                        'filename': filename,
+                        'username': username,
+                        'timestamp': timestamp,
+                        'content_type': content_type
+                    })
+
+            for filename in media_files:
+                if not any(s['filename'] == filename for s in stories):
+                    file_path = os.path.join(STORY_FOLDER, filename)
+                    file_stat = os.stat(file_path)
+                    timestamp = (
+                        datetime.fromtimestamp(file_stat.st_mtime)
+                        .strftime('%Y-%m-%d %H:%M:%S')
+                    )
+
+                    username_parts = filename.split('_')
+                    username = (
+                        username_parts[0]
+                        if len(username_parts) > 1
+                        else "Unknown"
+                    )
+
+                    ext = Path(filename).suffix.lower()
+                    content_type = (
+                        "video"
+                        if ext in ['.mp4', '.avi', '.mov']
+                        else "photo"
+                    )
+
+                    stories.append({
+                        'filename': filename,
+                        'username': username,
+                        'timestamp': timestamp,
+                        'content_type': content_type
+                    })
+
+            stories.sort(key=lambda x: x['timestamp'], reverse=True)
+
+            print(f"[DEBUG] Found {len(stories)} stories in folder")
+
+            return {"status": "success", "stories": stories}
+
+        except Exception as e:
+            print(f"[ERROR] get_stories_from_folder: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"status": "error", "message": str(e), "stories": []}

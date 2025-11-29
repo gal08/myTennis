@@ -6,16 +6,16 @@ import time
 
 
 class StoryViewerFrame(wx.Frame):
-    """
-    Frame להצגת Stories בסטייל אינסטגרם - מסך מלא עם חיווי התקדמות
-    """
 
     def __init__(self, parent, stories_list, username):
         super().__init__(
             parent,
             title="Stories",
             size=wx.Size(400, 700),
-            style=wx.DEFAULT_FRAME_STYLE & ~(wx.RESIZE_BORDER | wx.MAXIMIZE_BOX)
+            style=wx.DEFAULT_FRAME_STYLE & ~(
+                    wx.RESIZE_BORDER | wx.MAXIMIZE_BOX
+            )
+
         )
 
         self.stories = stories_list
@@ -31,34 +31,59 @@ class StoryViewerFrame(wx.Frame):
         self.load_story(0)
 
     def init_ui(self):
-        """יצירת הממשק"""
         main_panel = wx.Panel(self)
         main_panel.SetBackgroundColour(wx.Colour(0, 0, 0))
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # Header עם שם המשתמש וכפתור סגירה
         header_panel = wx.Panel(main_panel)
         header_panel.SetBackgroundColour(wx.Colour(0, 0, 0))
         header_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         # Profile picture placeholder
-        profile_btn = wx.Button(header_panel, label="", size=(40, 40), style=wx.BORDER_SIMPLE)
+        profile_btn = wx.Button(
+            header_panel,
+            label="",
+            size=(40, 40),
+            style=wx.BORDER_SIMPLE
+        )
+
         profile_btn.SetBackgroundColour(wx.Colour(80, 80, 80))
         header_sizer.Add(profile_btn, 0, wx.ALL, 10)
 
         # Username
         self.username_text = wx.StaticText(header_panel, label="")
         self.username_text.SetForegroundColour(wx.WHITE)
-        self.username_text.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        self.username_text.SetFont(
+            wx.Font(
+                12,
+                wx.FONTFAMILY_DEFAULT,
+                wx.FONTSTYLE_NORMAL,
+                wx.FONTWEIGHT_BOLD
+            )
+        )
+
         header_sizer.Add(self.username_text, 0, wx.ALIGN_CENTER_VERTICAL)
 
         header_sizer.AddStretchSpacer()
 
         # Close button
-        close_btn = wx.Button(header_panel, label="✕", size=(40, 40), style=wx.BORDER_NONE)
+        close_btn = wx.Button(
+            header_panel,
+            label="✕",
+            size=(40, 40),
+            style=wx.BORDER_NONE
+        )
         close_btn.SetBackgroundColour(wx.Colour(0, 0, 0))
         close_btn.SetForegroundColour(wx.WHITE)
-        close_btn.SetFont(wx.Font(18, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        close_btn.SetFont(
+            wx.Font(
+                18,
+                wx.FONTFAMILY_DEFAULT,
+                wx.FONTSTYLE_NORMAL,
+                wx.FONTWEIGHT_BOLD
+            )
+        )
+
         close_btn.Bind(wx.EVT_BUTTON, self.on_close)
         header_sizer.Add(close_btn, 0, wx.ALL, 10)
 
@@ -115,7 +140,6 @@ class StoryViewerFrame(wx.Frame):
         self.Show()
 
     def load_story(self, index):
-        """טעינת Story לפי אינדקס"""
         if index < 0 or index >= len(self.stories):
             self.Close()
             return
@@ -146,23 +170,31 @@ class StoryViewerFrame(wx.Frame):
             self.display_static_content(story)
 
     def play_video(self, video_path):
-        """הפעלת וידאו"""
         if not os.path.exists(video_path):
-            wx.MessageBox(f"Video file not found: {video_path}", "Error", wx.OK | wx.ICON_ERROR)
+            wx.MessageBox(
+                f"Video file not found: {video_path}",
+                "Error",
+                wx.OK | wx.ICON_ERROR
+            )
+
             self.on_next(None)
             return
 
         self.video_capture = cv2.VideoCapture(video_path)
         if not self.video_capture.isOpened():
-            wx.MessageBox("Failed to open video", "Error", wx.OK | wx.ICON_ERROR)
+            wx.MessageBox(
+                "Failed to open video",
+                "Error",
+                wx.OK | wx.ICON_ERROR
+            )
+
             self.on_next(None)
             return
 
         self.is_playing = True
-        self.timer.Start(33)  # ~30 FPS
+        self.timer.Start(33)
 
     def stop_video(self):
-        """עצירת וידאו"""
         self.is_playing = False
         self.timer.Stop()
         if self.video_capture:
@@ -170,7 +202,6 @@ class StoryViewerFrame(wx.Frame):
             self.video_capture = None
 
     def update_video_frame(self, event):
-        """עדכון פריים של הוידאו"""
         if not self.is_playing or not self.video_capture:
             return
 
@@ -185,7 +216,6 @@ class StoryViewerFrame(wx.Frame):
         self.content_panel.Refresh()
 
     def on_paint(self, event):
-        """ציור הפריים על המסך"""
         dc = wx.PaintDC(self.content_panel)
 
         if hasattr(self, 'current_frame') and self.current_frame is not None:
@@ -207,7 +237,6 @@ class StoryViewerFrame(wx.Frame):
             dc.DrawBitmap(bitmap, x, y)
 
     def display_static_content(self, story):
-        """הצגת תוכן סטטי (טקסט)"""
         # Clear any video
         self.current_frame = None
         self.content_panel.Refresh()
@@ -217,7 +246,14 @@ class StoryViewerFrame(wx.Frame):
         dc.SetBackground(wx.Brush(wx.Colour(20, 20, 20)))
         dc.Clear()
         dc.SetTextForeground(wx.WHITE)
-        dc.SetFont(wx.Font(16, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        dc.SetFont(
+            wx.Font(
+                16,
+                wx.FONTFAMILY_DEFAULT,
+                wx.FONTSTYLE_NORMAL,
+                wx.FONTWEIGHT_NORMAL
+            )
+        )
 
         text = story.get('content', 'No content')
         text_size = dc.GetTextExtent(text)
@@ -232,27 +268,28 @@ class StoryViewerFrame(wx.Frame):
         wx.CallLater(5000, lambda: self.on_next(None))
 
     def on_previous(self, event):
-        """מעבר ל-Story הקודם"""
         if self.current_index > 0:
             self.load_story(self.current_index - 1)
 
     def on_next(self, event):
-        """מעבר ל-Story הבא"""
         if self.current_index < len(self.stories) - 1:
             self.load_story(self.current_index + 1)
         else:
             self.Close()
 
     def on_close(self, event):
-        """סגירת החלון"""
         self.stop_video()
         self.Destroy()
 
 
 def show_stories(parent, stories_list, username):
-    """פונקציה להפעלת מציג ה-Stories"""
     if not stories_list:
-        wx.MessageBox("No stories available", "Info", wx.OK | wx.ICON_INFORMATION)
+        wx.MessageBox(
+            "No stories available",
+            "Info",
+            wx.OK | wx.ICON_INFORMATION
+        )
+
         return
 
     viewer = StoryViewerFrame(parent, stories_list, username)

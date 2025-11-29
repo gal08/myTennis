@@ -10,7 +10,11 @@ PORT = 5000
 
 class LoginFrame(wx.Frame):
     def __init__(self):
-        super().__init__(parent=None, title='Tennis Social - Login', size=(400, 550))
+        super().__init__(
+            parent=None,
+            title='Tennis Social - Login',
+            size=(400, 550)
+        )
 
         # Store login result
         self.logged_in_username = None
@@ -40,14 +44,26 @@ class LoginFrame(wx.Frame):
         # Title
         title = wx.StaticText(panel, label='Welcome Back')
         title.SetForegroundColour(wx.Colour(255, 255, 255))
-        font_title = wx.Font(24, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
+        font_title = wx.Font(
+            24,
+            wx.FONTFAMILY_DEFAULT,
+            wx.FONTSTYLE_NORMAL,
+            wx.FONTWEIGHT_BOLD
+        )
+
         title.SetFont(font_title)
         main_sizer.Add(title, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
 
         # Subtitle
         subtitle = wx.StaticText(panel, label='Please login to continue')
         subtitle.SetForegroundColour(wx.Colour(153, 153, 153))
-        font_subtitle = wx.Font(11, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
+        font_subtitle = wx.Font(
+            11,
+            wx.FONTFAMILY_DEFAULT,
+            wx.FONTSTYLE_NORMAL,
+            wx.FONTWEIGHT_NORMAL
+        )
+
         subtitle.SetFont(font_subtitle)
         main_sizer.Add(subtitle, 0, wx.ALIGN_CENTER | wx.BOTTOM, 40)
 
@@ -71,7 +87,12 @@ class LoginFrame(wx.Frame):
         form_sizer.Add(password_label, 0, wx.LEFT | wx.BOTTOM, 8)
 
         # Password input
-        self.password_input = wx.TextCtrl(panel, size=(300, 35), style=wx.TE_PASSWORD | wx.TE_PROCESS_ENTER)
+        self.password_input = wx.TextCtrl(
+            panel,
+            size=(300, 35),
+            style=wx.TE_PASSWORD | wx.TE_PROCESS_ENTER
+        )
+
         self.password_input.SetBackgroundColour(wx.Colour(26, 26, 26))
         self.password_input.SetForegroundColour(wx.Colour(255, 255, 255))
         form_sizer.Add(self.password_input, 0, wx.EXPAND | wx.BOTTOM, 10)
@@ -87,7 +108,13 @@ class LoginFrame(wx.Frame):
         self.login_btn = wx.Button(panel, label='Login', size=(300, 45))
         self.login_btn.SetBackgroundColour(wx.Colour(255, 255, 255))
         self.login_btn.SetForegroundColour(wx.Colour(0, 0, 0))
-        font_btn = wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
+        font_btn = wx.Font(
+            12,
+            wx.FONTFAMILY_DEFAULT,
+            wx.FONTSTYLE_NORMAL,
+            wx.FONTWEIGHT_BOLD
+        )
+
         self.login_btn.SetFont(font_btn)
         self.login_btn.Bind(wx.EVT_BUTTON, self.on_login)
         form_sizer.Add(self.login_btn, 0, wx.EXPAND | wx.BOTTOM, 20)
@@ -137,7 +164,11 @@ class LoginFrame(wx.Frame):
             return response
 
         except ConnectionRefusedError:
-            return {"status": "error", "message": "Could not connect to server. Is it running?"}
+            return {
+                "status": "error",
+                "message": "Could not connect to server. Is it running?"
+            }
+
         except Exception as e:
             return {"status": "error", "message": f"Network error: {e}"}
 
@@ -180,8 +211,11 @@ class LoginFrame(wx.Frame):
 
     def on_forgot_password(self, event):
         """Handle forgot password click"""
-        wx.MessageBox('Please contact the administrator to reset your password.',
-                      'Forgot Password', wx.OK | wx.ICON_INFORMATION)
+        wx.MessageBox(
+            'Please contact the administrator to reset your password.',
+            'Forgot Password',
+            wx.OK | wx.ICON_INFORMATION
+        )
 
     def on_signup_click(self, event):
         """Handle sign up link click - Open Signup window"""

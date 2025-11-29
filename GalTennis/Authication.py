@@ -10,13 +10,26 @@ ADMIN_SECRET_KEY = "SecretKey"
 
 
 class Authentication:
+    """
+    Authentication system that manages user signup and login
+    using an SQLite database.
+
+    Responsibilities:
+    - Ensure database and tables exist.
+    - Support regular and admin account registration.
+    - Validate admin secret key before creating admin accounts.
+    - Handle login requests and return whether the user is admin.
+    """
 
     def __init__(self):
+        """
+            Constructor initializes the database on object creation.
+        """
         self._initialize_db()
 
     def _initialize_db(self):
         """Ensures the 'users' table exists."""
-        conn = sqlite3.connect(DB_NAME)
+        conn = sqlite3.connect(DB_NAME, timeout=10)
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -51,42 +64,84 @@ class Authentication:
                     "message": "Invalid admin secret key. Access denied."
                 }
 
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-
         try:
-            # Insert user with plain text password (as per original code)
-            cursor.execute("INSERT INTO users (username, password, is_admin) VALUES (?, ?, ?)",
-                           (username, password, is_admin))
-            conn.commit()
-            return {
-                "status": "success",
-                "message": f"Signup successful as {'admin' if is_admin else 'regular user'}"
-            }
-        except sqlite3.IntegrityError:
-            return {"status": "error", "message": "Username already exists"}
-        finally:
-            conn.close()
+            conn = sqlite3.connect(DB_NAME, timeout=10)
+            cursor = conn.cursor()
+
+            try:
+                # Insert user with plain text password (as per original code)
+                cursor.execute(
+                    "INSERT INTO users (username, password, is_admin) "
+                    "VALUES (?, ?, ?)",
+                    (username, password, is_admin)
+                )
+
+                conn.commit()
+                return {
+                    "status": "success",
+                    "message": (
+                        f"Signup successful as"
+                        f"{'admin' if is_admin else 'regular user'}"
+                    )
+                }
+            except sqlite3.IntegrityError:
+                return {
+                    "status": "error",
+                    "message": "Username already exists"
+                }
+
+            finally:
+                conn.close()
+
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e):
+                return {
+                    "status": "error",
+                    "message": "Database busy, please try again"
+                }
+
+            return {"status": "error", "message": str(e)}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def login(self, username, password):
         """Performs login and verification."""
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
+        try:
+            conn = sqlite3.connect(DB_NAME, timeout=10)
+            cursor = conn.cursor()
 
-        # Check username and password
-        cursor.execute("SELECT is_admin FROM users WHERE username=? AND password=?", (username, password))
-        user_data = cursor.fetchone()
-        conn.close()
+            # Check username and password
+            cursor.execute(
+                "SELECT is_admin FROM users "
+                "WHERE username=? AND password=?",
+                (username, password)
+            )
 
-        if user_data:
-            is_admin = user_data[0]
+            user_data = cursor.fetchone()
+            conn.close()
+
+            if user_data:
+                is_admin = user_data[0]
+                return {
+                    "status": "success",
+                    "message": "Login successful",
+                    "is_admin": is_admin
+                }
+
             return {
-                "status": "success",
-                "message": "Login successful",
-                "is_admin": is_admin
+                "status": "error",
+                "message": "Invalid username or password."
             }
 
-        return {"status": "error", "message": "Invalid username or password."}
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e):
+                return {
+                    "status": "error",
+                    "message": "Database busy, please try again"
+                }
+            return {"status": "error", "message": str(e)}
+        except Exception as e:
+            return {"status": "error", "message": str(e)}
 
     def handle_request(self, request_type, payload):
         """Handles authentication requests from the server."""
@@ -94,7 +149,10 @@ class Authentication:
         password = payload.get('password')
 
         if not username or not password:
-            return {"status": "error", "message": "Missing username or password in request."}
+            return {
+                "status": "error",
+                "message": "Missing username or password in request."
+            }
 
         if request_type == 'SIGNUP':
             is_admin = payload.get('is_admin', 0)

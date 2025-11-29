@@ -3,7 +3,10 @@ import time  # MUST be imported for generating timestamp
 
 # DB configuration
 DB_NAME = 'users.db'
-ALLOWED_CATEGORIES = ('forehand', 'backhand', 'serve', 'slice', 'volley', 'smash')
+ALLOWED_CATEGORIES = (
+    'forehand', 'backhand', 'serve',
+    'slice', 'volley', 'smash'
+)
 ALLOWED_DIFFICULTIES = ('easy', 'medium', 'hard')
 
 
@@ -17,21 +20,29 @@ class VideosHandler:
         self._initialize_db()
 
     def _initialize_db(self):
-        """Ensures the 'videos' table exists with all required fields (uploader, timestamp, UNIQUE filename)."""
+        """Ensures the 'videos' table exists with all required
+        fields (uploader, timestamp, UNIQUE filename)."""
         conn = sqlite3.connect(DB_NAME)
         cursor = conn.cursor()
 
-        # Updated table structure to include uploader, timestamp, and UNIQUE constraint on filename
-        cursor.execute("""
+        # Updated table structure
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS videos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                filename TEXT UNIQUE NOT NULL,  
-                uploader TEXT NOT NULL,         
-                category TEXT NOT NULL CHECK(category IN ('forehand', 'backhand', 'serve', 'slice', 'volley', 'smash')),
-                difficulty TEXT NOT NULL CHECK(difficulty IN ('easy', 'medium', 'hard')),
-                timestamp REAL NOT NULL         
+                filename TEXT UNIQUE NOT NULL,
+                uploader TEXT NOT NULL,
+                category TEXT NOT NULL
+                    CHECK(category IN (
+                        'forehand','backhand','serve','slice','volley','smash'
+                    )),
+                difficulty TEXT NOT NULL
+                    CHECK(difficulty IN ('easy','medium','hard')),
+                timestamp REAL NOT NULL
             )
-        """)
+            """
+        )
+
         conn.commit()
         conn.close()
 
@@ -45,10 +56,22 @@ class VideosHandler:
         uploader = payload.get("uploader")  # Essential for tracking the user
 
         if not all([title, category, level, uploader]):
-            return {"status": "error", "message": "Missing video title, category, level, or uploader in request."}
+            return {
+                "status": "error",
+                "message": (
+                    "Missing video title, category, "
+                    "level, or uploader in request."
+                )
+            }
 
-        if category not in ALLOWED_CATEGORIES or level not in ALLOWED_DIFFICULTIES:
-            return {"status": "error", "message": "Invalid category or difficulty level."}
+        if (
+                category not in ALLOWED_CATEGORIES or
+                level not in ALLOWED_DIFFICULTIES
+        ):
+            return {
+                "status": "error",
+                "message": "Invalid category or difficulty level."
+            }
 
         conn = None
         try:
@@ -57,20 +80,51 @@ class VideosHandler:
             current_time = time.time()
 
             cursor.execute(
-                "INSERT INTO videos (filename, uploader, category, difficulty, timestamp) VALUES (?, ?, ?, ?, ?)",
-                (title, uploader, category, level, current_time))
+                "INSERT INTO videos (filename, "
+                "uploader, "
+                "category, "
+                "difficulty, "
+                "timestamp) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    title,
+                    uploader,
+                    category,
+                    level,
+                    current_time
+                )
+            )
+
             conn.commit()
-            return {"status": "success", "message": "Video metadata added successfully ✅"}
+            return {
+                "status": "success",
+                "message": "Video metadata added successfully"
+            }
+
         except sqlite3.IntegrityError:
-            return {"status": "error", "message": "The video title already exists. Please choose a unique title."}
+            return {
+                "status": "error",
+                "message": (
+                    "The video title already exists. "
+                    "Please choose a unique title."
+                )
+            }
+
         except Exception as e:
-            return {"status": "error", "message": f"DB Error while adding video: {e}"}
+            return {
+                "status": "error",
+                "message": (
+                    f"DB Error while adding video: {e}"
+                )
+            }
+
         finally:
             if conn:
                 conn.close()
 
     def get_videos(self):
-        """Retrieves all available videos, ordered by latest upload (timestamp)."""
+        """Retrieves all available videos,
+         ordered by latest upload (timestamp)."""
         conn = None
         try:
             conn = sqlite3.connect(DB_NAME)
@@ -78,7 +132,10 @@ class VideosHandler:
 
             # Fetching all required fields, ordered by timestamp (newest first)
             cursor.execute(
-                "SELECT filename, uploader, category, difficulty, timestamp FROM videos ORDER BY timestamp DESC")
+                "SELECT filename, uploader, category, difficulty, timestamp "
+                "FROM videos "
+                "ORDER BY timestamp DESC"
+            )
             rows = cursor.fetchall()
 
             # Formatting output to match the client's expected keys

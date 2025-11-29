@@ -5,6 +5,7 @@ import struct
 import os
 from pathlib import Path
 
+
 class MediaClient:
     def __init__(self, host='127.0.0.1', port=3333):
         self.host = host
@@ -14,7 +15,6 @@ class MediaClient:
         if not os.path.exists(file_path):
             raise FileNotFoundError("file not found")
 
-        # קרא את הקובץ והצפן ל-base64
         with open(file_path, "rb") as f:
             file_bytes = f.read()
 

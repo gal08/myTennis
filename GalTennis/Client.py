@@ -10,6 +10,7 @@ import base64
 import transfer_story_to_server
 from Protocol import Protocol
 from Video_Player_Client import run_video_player_client
+from story_player_client import run_story_player_client
 
 # --- Import the Story camera module we integrated ---
 import Story_camera
@@ -18,6 +19,7 @@ import Story_camera
 HOST = '127.0.0.1'
 PORT = 5000
 VIDEO_FOLDER = "videos"
+DISPLAY_INDEX_OFFSET = 1
 
 
 class LoginSignupFrame(wx.Frame):
@@ -39,7 +41,13 @@ class LoginSignupFrame(wx.Frame):
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Title
-        title_font = wx.Font(18, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
+        title_font = wx.Font(
+            18,
+            wx.FONTFAMILY_DEFAULT,
+            wx.FONTSTYLE_NORMAL,
+            wx.FONTWEIGHT_BOLD
+        )
+
         title = wx.StaticText(panel, label="🎾 Tennis Social")
         title.SetFont(title_font)
         title.SetForegroundColour(wx.Colour(40, 120, 80))
@@ -53,18 +61,39 @@ class LoginSignupFrame(wx.Frame):
         login_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Username
-        login_sizer.Add(wx.StaticText(login_panel, label="Username:"), 0, wx.LEFT | wx.TOP, 10)
+        login_sizer.Add(
+            wx.StaticText(login_panel, label="Username:"),
+            0,
+            wx.LEFT | wx.TOP,
+            10
+        )
+
         self.login_username = wx.TextCtrl(login_panel, size=wx.Size(300, 30))
         login_sizer.Add(self.login_username, 0, wx.ALL | wx.EXPAND, 10)
 
         # Password
-        login_sizer.Add(wx.StaticText(login_panel, label="Password:"), 0, wx.LEFT, 10)
-        self.login_password = wx.TextCtrl(login_panel, size=wx.Size(300, 30),
-                                          style=wx.TE_PASSWORD | wx.TE_PROCESS_ENTER)
+        login_sizer.Add(
+            wx.StaticText(login_panel, label="Password:"),
+            0,
+            wx.LEFT,
+            10
+        )
+
+        self.login_password = wx.TextCtrl(
+            login_panel,
+            size=wx.Size(300, 30),
+            style=wx.TE_PASSWORD | wx.TE_PROCESS_ENTER
+        )
+
         login_sizer.Add(self.login_password, 0, wx.ALL | wx.EXPAND, 10)
 
         # Login button
-        login_btn = wx.Button(login_panel, label="Login", size=wx.Size(300, 40))
+        login_btn = wx.Button(
+            login_panel,
+            label="Login",
+            size=wx.Size(300, 40)
+        )
+
         login_btn.SetBackgroundColour(wx.Colour(76, 175, 80))
         login_btn.SetForegroundColour(wx.WHITE)
         login_btn.Bind(wx.EVT_BUTTON, self.on_login)
@@ -83,22 +112,57 @@ class LoginSignupFrame(wx.Frame):
         signup_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Username
-        signup_sizer.Add(wx.StaticText(signup_panel, label="Username:"), 0, wx.LEFT | wx.TOP, 10)
+        signup_sizer.Add(
+            wx.StaticText(signup_panel, label="Username:"),
+            0,
+            wx.LEFT | wx.TOP,
+            10
+        )
+
         self.signup_username = wx.TextCtrl(signup_panel, size=wx.Size(300, 30))
         signup_sizer.Add(self.signup_username, 0, wx.ALL | wx.EXPAND, 10)
 
         # Password
-        signup_sizer.Add(wx.StaticText(signup_panel, label="Password:"), 0, wx.LEFT, 10)
-        self.signup_password = wx.TextCtrl(signup_panel, size=wx.Size(300, 30), style=wx.TE_PASSWORD)
+        signup_sizer.Add(
+            wx.StaticText(signup_panel, label="Password:"),
+            0,
+            wx.LEFT,
+            10
+        )
+
+        self.signup_password = wx.TextCtrl(
+            signup_panel,
+            size=wx.Size(300, 30),
+            style=wx.TE_PASSWORD
+        )
+
         signup_sizer.Add(self.signup_password, 0, wx.ALL | wx.EXPAND, 10)
 
         # Admin checkbox
-        self.admin_checkbox = wx.CheckBox(signup_panel, label="Register as Manager/Admin")
+        self.admin_checkbox = wx.CheckBox(
+            signup_panel,
+            label="Register as Manager/Admin"
+        )
+
         signup_sizer.Add(self.admin_checkbox, 0, wx.ALL, 10)
 
         # Admin secret (initially hidden)
-        signup_sizer.Add(wx.StaticText(signup_panel, label="Admin Secret Key:"), 0, wx.LEFT, 10)
-        self.admin_secret = wx.TextCtrl(signup_panel, size=wx.Size(300, 30), style=wx.TE_PASSWORD)
+        signup_sizer.Add(
+            wx.StaticText(
+                signup_panel,
+                label="Admin Secret Key:"
+            ),
+            0,
+            wx.LEFT,
+            10
+        )
+
+        self.admin_secret = wx.TextCtrl(
+            signup_panel,
+            size=wx.Size(300, 30),
+            style=wx.TE_PASSWORD
+        )
+
         self.admin_secret.Enable(False)
         signup_sizer.Add(self.admin_secret, 0, wx.ALL | wx.EXPAND, 10)
 
@@ -106,7 +170,12 @@ class LoginSignupFrame(wx.Frame):
         self.admin_checkbox.Bind(wx.EVT_CHECKBOX, self.on_admin_checkbox)
 
         # Signup button
-        signup_btn = wx.Button(signup_panel, label="Sign Up", size=wx.Size(300, 40))
+        signup_btn = wx.Button(
+            signup_panel,
+            label="Sign Up",
+            size=wx.Size(300, 40)
+        )
+
         signup_btn.SetBackgroundColour(wx.Colour(33, 150, 243))
         signup_btn.SetForegroundColour(wx.WHITE)
         signup_btn.Bind(wx.EVT_BUTTON, self.on_signup)
@@ -169,7 +238,12 @@ class LoginSignupFrame(wx.Frame):
 
             wx.CallLater(500, self.Close)
         else:
-            self.login_status.SetLabel(f"✗ {response.get('message', 'Login failed')}")
+            error_message = response.get('message', 'Login failed')
+
+            self.login_status.SetLabel(
+                f"✗ {error_message}"
+            )
+
             self.login_status.SetForegroundColour(wx.Colour(200, 0, 0))
 
     def on_signup(self, event):
@@ -212,7 +286,12 @@ class LoginSignupFrame(wx.Frame):
             self.admin_checkbox.SetValue(False)
             self.admin_secret.Enable(False)
         else:
-            self.signup_status.SetLabel(f"✗ {response.get('message', 'Signup failed')}")
+            signup_error_message = response.get('message', 'Signup failed')
+
+            self.signup_status.SetLabel(
+                f"✗ {signup_error_message}"
+            )
+
             self.signup_status.SetForegroundColour(wx.Colour(200, 0, 0))
 
 
@@ -227,14 +306,13 @@ class Client:
         self.port = PORT
         self.username = None
         self.is_admin = 0
-        #self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        #self.socket.connect((self.host, self.port))
         if not os.path.exists(VIDEO_FOLDER):
             os.makedirs(VIDEO_FOLDER)
 
     def _send_request(self, request_type, payload):
         """
-        Sends a JSON request to the server using Protocol and returns the server's JSON response.
+        Sends a JSON request to the server using Protocol
+         and returns the server's JSON response.
         """
         try:
             # Create a socket connection
@@ -247,7 +325,6 @@ class Client:
             })
 
             # Send data to the server using Protocol
-            #Protocol.send(self.socket, request_data)
             Protocol.send(client_socket, request_data)
             # Receive the response using Protocol
             response_data = Protocol.recv(client_socket)
@@ -256,11 +333,29 @@ class Client:
             return response
 
         except ConnectionRefusedError:
-            print(f"Error: Could not connect to the server at {self.host}:{self.port}. Is the server running?")
+            error_msg = (
+                f"Error: Could not connect to the server at "
+                f"{self.host}:{self.port}. Is the server running?"
+            )
+
+            print(error_msg)
+
             return {"status": "error", "message": "Connection Refused."}
         except json.JSONDecodeError:
-            print("Error: Received non-JSON or corrupted data from the server.")
-            return {"status": "error", "message": "Invalid server response format."}
+            error_msg = (
+                f"Error: Could not connect to the server at "
+                f"{self.host}:{self.port}. Is the server running?"
+            )
+
+            print(error_msg)
+
+            return {
+                "status": "error",
+                "message": (
+                    "Invalid server response format."
+                )
+            }
+
         except Exception as e:
             print(f"An unexpected error occurred during request: {e}")
             return {"status": "error", "message": f"Network Error: {e}"}
@@ -290,7 +385,15 @@ class Client:
         response = self._send_request('GET_VIDEOS', {})
 
         if response.get('status') != 'success' or not response.get('videos'):
-            print(f"✗ Could not retrieve videos: {response.get('message', 'No videos found or server error.')}")
+            error_message = response.get(
+                "message",
+                "No videos found or server error."
+            )
+
+            print(
+                f"✗ Could not retrieve videos: {error_message}"
+            )
+
             return
 
         videos = response['videos']
@@ -301,14 +404,42 @@ class Client:
             return
 
         for i, video in enumerate(videos):
-            likes_res = self._send_request('GET_LIKES_COUNT', {'video_title': video['title']})
+            request_payload = {
+                "video_title": video["title"]
+            }
+
+            likes_res = self._send_request(
+                "GET_LIKES_COUNT",
+                request_payload
+            )
+
             likes_count = likes_res.get('count', 0)
 
-            print(
-                f"[{i + 1}] Title: {video['title']} | Category: {video['category']} | Level: {video['level']} | Uploader: {video['uploader']} | Likes: {likes_count}")
+            video_index_to_display = i + DISPLAY_INDEX_OFFSET
+
+            video_title = video["title"]
+            video_category = video["category"]
+            video_level = video["level"]
+            video_uploader = video["uploader"]
+
+            message = (
+                f"[{video_index_to_display}] "
+                f"Title: {video_title} | "
+                f"Category: {video_category} | "
+                f"Level: {video_level} | "
+                f"Uploader: {video_uploader} | "
+                f"Likes: {likes_count}"
+            )
+
+            print(message)
 
         while True:
-            selection = input("Enter video number to select, or (B)ack: ").strip().upper()
+            user_input = input(
+                "Enter video number to select, or (B)ack: "
+            )
+
+            selection = user_input.strip().upper()
+
             if selection == 'B':
                 return
 
@@ -326,7 +457,15 @@ class Client:
         """Collects metadata and sends the ADD_VIDEO request to the server."""
         print("\n--- Upload Video Metadata ---")
         title = input("Enter video filename (e.g., my_serve_1.mp4): ").strip()
-        category = input("Enter category (forehand/backhand/serve/slice/volley/smash): ").strip().lower()
+        category_prompt = (
+            "Enter category "
+            "(forehand/backhand/serve/slice/volley/smash): "
+        )
+
+        category_input = input(category_prompt)
+
+        category = category_input.strip().lower()
+
         level = input("Enter difficulty (easy/medium/hard): ").strip().lower()
 
         payload = {
@@ -341,7 +480,11 @@ class Client:
         if response.get('status') == 'success':
             print(f"✓ {response['message']}")
         else:
-            print(f"✗ Upload failed: {response.get('message', 'Unknown error')}")
+            error_message = response.get('message', 'Unknown error')
+
+            print(
+                f"✗ Upload failed: {error_message}"
+            )
 
     # --- Interaction and Playback ---
 
@@ -361,7 +504,12 @@ class Client:
             print(f"▶ Playing video: {video_title}...")
 
             # Request server to start streaming this video
-            response = self._send_request('PLAY_VIDEO', {'video_title': video_title})
+            response = self._send_request(
+                'PLAY_VIDEO',
+                {
+                    'video_title': video_title
+                }
+            )
 
             if response.get('status') == 'success':
                 # Wait for server to initialize
@@ -372,7 +520,10 @@ class Client:
 
                 print(f"ℹ Finished playing: {video_title}")
             else:
-                print(f"✗ Failed to play video: {response.get('message', 'Unknown error')}")
+                print(
+                    f"✗ Failed to play video: "
+                    f"{response.get('message', 'Unknown error')}"
+                )
 
         elif choice == '2':
             self.toggle_like(video_title)
@@ -397,22 +548,35 @@ class Client:
         response = self._send_request('LIKE_VIDEO', payload)
 
         if response.get('status') == 'success':
-            print(f"👍 {response['message']}")
+            print(f" {response['message']}")
         else:
-            print(f"✗ Action failed: {response.get('message', 'Unknown error')}")
+            print(
+                f"✗ Action failed: "
+                f"{response.get('message', 'Unknown error')}"
+            )
 
     def view_and_add_comments(self, video_title):
         """Retrieves and allows adding comments."""
-        response = self._send_request('GET_COMMENTS', {'video_title': video_title})
+        response = self._send_request(
+            'GET_COMMENTS',
+            {'video_title': video_title}
+        )
 
         print(f"\n--- Comments for {video_title} ---")
         if response.get('status') == 'success' and response.get('comments'):
             for comment in response['comments']:
-                print(f"[{comment['timestamp']}] {comment['username']}: {comment['content']}")
+                print(
+                    f"[{comment['timestamp']}] "
+                    f"{comment['username']}: "
+                    f"{comment['content']}"
+                )
+
         else:
             print("No comments yet.")
 
-        comment_content = input("\nAdd a new comment (or press Enter to skip): ").strip()
+        comment_content = input(
+            "\nAdd a new comment (or press Enter to skip): "
+        ).strip()
 
         if comment_content:
             payload = {
@@ -425,128 +589,236 @@ class Client:
             if add_res.get('status') == 'success':
                 print("✓ Comment added.")
             else:
-                print(f"✗ Failed to add comment: {add_res.get('message', 'Error.')}")
+                print(
+                    f"✗ Failed to add comment: "
+                    f"{add_res.get('message', 'Error.')}"
+                )
 
     # --- Stories Management ---
 
     def display_stories(self):
-        """Retrieves and displays all active stories (last 24 hours)."""
+        """Retrieves and displays all available
+        stories from the stories folder."""
         response = self._send_request('GET_STORIES', {})
 
-        print("\n--- Live Stories (Last 24h) ---")
+        print("\n--- Available Stories ---")
 
-        if response.get('status') != 'success' or not response.get('stories'):
-            print(f"✗ Could not retrieve stories: {response.get('message', 'No active stories found.')}")
+        if response.get('status') != 'success':
+            print(
+                f"✗ Could not retrieve stories: "
+                f"{response.get('message', 'Server error.')}"
+            )
+
             return
 
-        stories = response['stories']
+        stories = response.get('stories', [])
+
+        if not stories:
+            print("No stories found in the stories folder.")
+            print(
+                "Tip: Add images (.jpg, .png) or videos (.mp4) "
+                "to the 'stories' folder"
+            )
+
+            return
+
+        # Display all available stories
         for i, story in enumerate(stories):
-            print(f"[{i + 1}] {story['username']} posted a story at {story['timestamp']}")
+            # Determine file type
+            ext = os.path.splitext(story['filename'])[1].lower()
+            file_type = (
+                "Image"
+                if ext in ['.jpg', '.jpeg', '.png', '.bmp']
+                else "Video"
+            )
+
+            print(
+                f"[{i + 1}] "
+                f"{file_type} | "
+                f"{story['filename']} | "
+                f"From: {story['username']} | "
+                f"{story['timestamp']}"
+            )
 
         while True:
-            selection = input("Enter story number to view content, or (B)ack: ").strip().upper()
+            selection = input(
+                "\nEnter story number to view, or (B)ack: "
+            ).strip().upper()
+
             if selection == 'B':
                 return
 
             try:
                 index = int(selection) - 1
                 if 0 <= index < len(stories):
-                    print(f"\n--- Story Content from {stories[index]['username']} ---")
-                    print(f"💬 {stories[index]['content']}")
-                    print("---------------------------------")
-                    break
+                    selected_story = stories[index]
+                    print(
+                        f"\n▶ Playing story: {selected_story['filename']}..."
+                    )
+
+                    self.play_story(selected_story['filename'])
+
+                    print("\n--- Available Stories ---")
+                    for i, story in enumerate(stories):
+                        ext = os.path.splitext(story['filename'])[1].lower()
+                        is_image = ext in ['.jpg', '.jpeg', '.png', '.bmp']
+
+                        file_type = (
+                            " Image"
+                            if is_image
+                            else "🎥 Video"
+                        )
+
+                        story_index = i + 1
+                        story_file = story['filename']
+                        story_user = story['username']
+                        story_time = story['timestamp']
+
+                        print(
+                            f"[{story_index}] {file_type} | {story_file} | "
+                            f"From: {story_user} | {story_time}"
+                        )
+
                 else:
                     print("Invalid number.")
             except ValueError:
                 print("Invalid input.")
 
-    """def add_story(self):
-        Sends an ADD_STORY request to the server (text-only fallback).
-        print("\n--- Post a New Story (text fallback) ---")
-        content = input("Enter story text (e.g., 'Great practice today!'): ").strip()
+    def play_story(self, story_filename):
+        """Plays a story (image or video)"""
+        print(f"▶ Loading story: {story_filename}...")
 
-        if not content:
-            print("Story content cannot be empty.")
-            return
+        story_request_type = 'PLAY_STORY'
+        story_payload = {'filename': story_filename}
 
-        payload = {
-            'username': self.username,
-            'content': content
-        }
-
-        response = self._send_request('ADD_STORY', payload)
+        response = self._send_request(story_request_type, story_payload)
 
         if response.get('status') == 'success':
-            print(f"✓ {response['message']}")
+            time.sleep(2)
+
+            run_story_player_client()
+
+            print(f"ℹ Finished playing story: {story_filename}")
         else:
-            print(f"✗ Failed to post story: {response.get('message', 'Unknown error')}")"""
+            error_prefix = "✗ Failed to play story: "
+            error_message = response.get('message', 'Unknown error')
+
+            print(f"{error_prefix}{error_message}")
 
     def on_story_post_callback(self, caption, media_type, media_data):
-        """
-        media_type: "image" או "video"
-        media_data: Base64 string של הקובץ
-        """
         print("Posting story...")
 
-        # קובץ זמני בהתאם לסוג המדיה
         if media_type == "video":
             file_name = "story.mp4"
         else:
             file_name = "story.jpg"
 
-        # המרת Base64 לבייטס ושמירה לקובץ
-        file_bytes = base64.b64decode(media_data)
-        with open(file_name, "wb") as f:
-            f.write(file_bytes)
+        try:
+            file_bytes = base64.b64decode(media_data)
+            with open(file_name, "wb") as f:
+                f.write(file_bytes)
+            print(f"✓ Saved temp file: {file_name}")
+        except Exception as e:
+            print(f"✗ Failed to save media file: {e}")
+            return
 
-        # 1. שליחת הסיפור לשרת האפליקציה (מתעד ב-DB)
+        db_content_type = "image" if media_type == "photo" else "video"
+
         payload = {
             "username": self.username,
-            "filename": file_name
+            "filename": file_name,
+            "content_type": db_content_type
         }
         res = self._send_request("ADD_STORY", payload)
 
         if res.get('status') != 'success':
             print(f"✗ Failed to register story: {res.get('message')}")
+            try:
+                os.remove(file_name)
+            except:
+                pass
             return
 
-        # 2. המתן שהשרת המדיה יעלה
-        print("Waiting for media server to start...")
-        time.sleep(3)  # נותן זמן לשרת המדיה להתחיל
+        print("✓ Story registered in database")
 
-        # 3. שליחה לשרת המדיה
+        print("Waiting for media server to start...")
+        time.sleep(2)
+
         try:
             import transfer_story_to_server
             transfer_story_to_server.run(file_name, self.username)
-            print("✓ Story posted successfully!")
+            print("✓ Story uploaded to media server!")
+
+            print("Finalizing...")
+            time.sleep(2)
+
+            self.verify_story_uploaded(file_name)
+
         except Exception as e:
             print(f"✗ Failed to upload media: {e}")
             print("Story metadata saved but media upload failed.")
 
+        finally:
+            try:
+                if os.path.exists(file_name):
+                    os.remove(file_name)
+                    print(f"Cleaned up temp file: {file_name}")
+            except Exception as e:
+                print(f"⚠ Could not delete temp file: {e}")
+
+    def verify_story_uploaded(self, filename):
+        print("Verifying story availability...", end="", flush=True)
+
+        for i in range(5):
+            response = self._send_request('GET_STORIES', {})
+
+            if response.get('status') == 'success':
+                stories = response.get('stories', [])
+
+                for story in stories:
+                    if story['username'] == self.username:
+                        print(" ✓ Story ready!")
+                        return True
+
+            print(".", end="", flush=True)
+            time.sleep(0.5)
+
+        print(" ⚠ Story uploaded but may take a moment to appear")
+        return False
 
     def open_story_camera(self):
-        """
-        Opens the StoryCameraFrame UI so the user can capture/upload a photo/video story.
-        This will block until the camera frame is closed (which is intended).
-        """
-        # closed_flag is used to know when the camera window closed and MainLoop returned
-        closed_flag = {'closed': False}
+        """Opens story camera - creates new wx.App instance"""
+        print("Opening camera...")
 
-        def closed_callback():
-            closed_flag['closed'] = True
+        story_posted = {'posted': False}
+        camera_closed = {'closed': False}
 
-        # Create a wx App and open the camera frame
-        app = wx.App(False)
-        # Story_camera.StoryCameraFrame signature: (parent, username, on_post_callback, closed_callback)
-        frame = Story_camera.StoryCameraFrame(None, self.username, self.on_story_post_callback, closed_callback)
+        def on_post(caption, media_type, media_data):
+            story_posted['posted'] = True
+            self.on_story_post_callback(caption, media_type, media_data)
+
+        def on_camera_closed():
+            camera_closed['closed'] = True
+
+        app = wx.App()
+
+        frame = Story_camera.StoryCameraFrame(
+            None,
+            self.username,
+            on_post,
+            on_camera_closed
+        )
+
+        frame.Show()
+
         app.MainLoop()
-        frame.closed_callback()
 
-        # When MainLoop exits, the camera window was closed.
-        if closed_flag['closed']:
-            print("Camera window closed. Returning to console menu.")
+        app.Destroy()
 
-    # --- Manager Commands ---
+        if story_posted['posted']:
+            print("\n✓ Story posted! Returning to menu...")
+        else:
+            print("\n✗ Camera closed without posting")
 
     def view_all_users(self):
         """Retrieves and displays all users (Manager only)."""
@@ -557,7 +829,10 @@ class Client:
         response = self._send_request('GET_ALL_USERS', {})
 
         if response.get('status') != 'success' or not response.get('users'):
-            print(f"✗ Could not retrieve users: {response.get('message', 'Server error.')}")
+            error_prefix = "✗ Could not retrieve users: "
+            error_message = response.get('message', 'Server error.')
+            print(f"{error_prefix}{error_message}")
+
             return
 
         print("\n--- All Registered Users (MANAGER VIEW) ---")
@@ -581,8 +856,12 @@ class Client:
             print("Login cancelled or failed. Exiting...")
             return
 
-        print(
-            f"\n✓ Welcome {self.username}! You are logged in as a {'regular user' if not self.is_admin else 'manager'}.")
+        role_name = "regular user" if not self.is_admin else "manager"
+
+        welcome_prefix = "\n✓ Welcome "
+        welcome_suffix = f"! You are logged in as a {role_name}."
+
+        print(f"{welcome_prefix}{self.username}{welcome_suffix}")
 
         # Continue with console menu
         while True:

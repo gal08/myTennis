@@ -3,24 +3,27 @@ import wave
 
 
 class AudioRecorder:
-    """
-    מחלקה להקלטת אודיו בזמן הקלטת וידאו
+    """ A class that handles real-time audio recording using PyAudio.
+
+    This class is designed to be used while recording video at the same time.
+    It allows starting and stopping an audio stream, saving the audio as a WAV
+    file, and cleaning up resources safely after recording is finished.
     """
 
     def __init__(self):
+        """Initialize the audio recorder and all required settings."""
         self.audio = pyaudio.PyAudio()
         self.stream = None
         self.frames = []
         self.is_recording = False
 
-        # הגדרות אודיו
         self.format = pyaudio.paInt16
         self.channels = 2
         self.rate = 44100
         self.chunk = 1024
 
     def start_recording(self):
-        """התחלת הקלטה"""
+        """Start the audio recording process."""
         self.frames = []
         self.is_recording = True
 
@@ -40,13 +43,13 @@ class AudioRecorder:
             self.is_recording = False
 
     def _audio_callback(self, in_data, frame_count, time_info, status):
-        """Callback להקלטת אודיו"""
+        """Internal callback function that receives audio frames"""
         if self.is_recording:
             self.frames.append(in_data)
-        return (in_data, pyaudio.paContinue)
+        return in_data, pyaudio.paContinue
 
     def stop_recording(self):
-        """עצירת הקלטה"""
+        """Stop the current recording session."""
         self.is_recording = False
 
         if self.stream:
@@ -56,7 +59,7 @@ class AudioRecorder:
         print("Audio recording stopped")
 
     def save_audio(self, filename):
-        """שמירת האודיו לקובץ WAV"""
+        """Save the recorded audio data to a WAV file."""
         if not self.frames:
             print("No audio data to save")
             return False
@@ -75,7 +78,13 @@ class AudioRecorder:
             return False
 
     def cleanup(self):
-        """ניקוי משאבים"""
+        """Release all audio resources.
+
+        This method:
+        - Closes the stream if needed.
+        - Terminates the PyAudio instance.
+
+        Must be called when recording is fully done."""
         if self.stream:
             self.stream.close()
         self.audio.terminate()

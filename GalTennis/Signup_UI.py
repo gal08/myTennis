@@ -10,7 +10,11 @@ PORT = 5000
 
 class SignupFrame(wx.Frame):
     def __init__(self, login_frame=None):
-        super().__init__(parent=None, title='Tennis Social - Sign Up', size=(400, 700))
+        super().__init__(
+            parent=None,
+            title='Tennis Social - Sign Up',
+            size=(400, 700)
+        )
 
         # Store reference to login frame
         self.login_frame = login_frame
@@ -42,14 +46,24 @@ class SignupFrame(wx.Frame):
         # Title
         title = wx.StaticText(panel, label='Create Account')
         title.SetForegroundColour(wx.Colour(255, 255, 255))
-        font_title = wx.Font(24, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
+        font_title = wx.Font(
+            24,
+            wx.FONTFAMILY_DEFAULT,
+            wx.FONTSTYLE_NORMAL,
+            wx.FONTWEIGHT_BOLD
+        )
         title.SetFont(font_title)
         main_sizer.Add(title, 0, wx.ALIGN_CENTER | wx.BOTTOM, 10)
 
         # Subtitle
         subtitle = wx.StaticText(panel, label='Join the tennis community')
         subtitle.SetForegroundColour(wx.Colour(153, 153, 153))
-        font_subtitle = wx.Font(11, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL)
+        font_subtitle = wx.Font(
+            11,
+            wx.FONTFAMILY_DEFAULT,
+            wx.FONTSTYLE_NORMAL,
+            wx.FONTWEIGHT_NORMAL
+        )
         subtitle.SetFont(font_subtitle)
         main_sizer.Add(subtitle, 0, wx.ALIGN_CENTER | wx.BOTTOM, 30)
 
@@ -73,7 +87,11 @@ class SignupFrame(wx.Frame):
         form_sizer.Add(password_label, 0, wx.LEFT | wx.BOTTOM, 8)
 
         # Password input
-        self.password_input = wx.TextCtrl(panel, size=(300, 35), style=wx.TE_PASSWORD)
+        self.password_input = wx.TextCtrl(
+            panel,
+            size=(300, 35),
+            style=wx.TE_PASSWORD
+        )
         self.password_input.SetBackgroundColour(wx.Colour(26, 26, 26))
         self.password_input.SetForegroundColour(wx.Colour(255, 255, 255))
         form_sizer.Add(self.password_input, 0, wx.EXPAND | wx.BOTTOM, 20)
@@ -84,13 +102,20 @@ class SignupFrame(wx.Frame):
         form_sizer.Add(confirm_label, 0, wx.LEFT | wx.BOTTOM, 8)
 
         # Confirm Password input
-        self.confirm_input = wx.TextCtrl(panel, size=(300, 35), style=wx.TE_PASSWORD)
+        self.confirm_input = wx.TextCtrl(
+            panel,
+            size=(300, 35),
+            style=wx.TE_PASSWORD
+        )
         self.confirm_input.SetBackgroundColour(wx.Colour(26, 26, 26))
         self.confirm_input.SetForegroundColour(wx.Colour(255, 255, 255))
         form_sizer.Add(self.confirm_input, 0, wx.EXPAND | wx.BOTTOM, 20)
 
         # Admin checkbox
-        self.admin_checkbox = wx.CheckBox(panel, label='Register as Admin (requires secret key)')
+        self.admin_checkbox = wx.CheckBox(
+            panel,
+            label='Register as Admin (requires secret key)'
+        )
         self.admin_checkbox.SetForegroundColour(wx.Colour(153, 153, 153))
         self.admin_checkbox.Bind(wx.EVT_CHECKBOX, self.on_admin_check)
         form_sizer.Add(self.admin_checkbox, 0, wx.BOTTOM, 10)
@@ -102,7 +127,11 @@ class SignupFrame(wx.Frame):
         form_sizer.Add(self.secret_label, 0, wx.LEFT | wx.BOTTOM, 8)
 
         # Admin secret key input (hidden by default)
-        self.secret_input = wx.TextCtrl(panel, size=(300, 35), style=wx.TE_PASSWORD)
+        self.secret_input = wx.TextCtrl(
+            panel,
+            size=(300, 35),
+            style=wx.TE_PASSWORD
+        )
         self.secret_input.SetBackgroundColour(wx.Colour(26, 26, 26))
         self.secret_input.SetForegroundColour(wx.Colour(255, 255, 255))
         self.secret_input.Hide()
@@ -112,7 +141,12 @@ class SignupFrame(wx.Frame):
         self.signup_btn = wx.Button(panel, label='Sign Up', size=(300, 45))
         self.signup_btn.SetBackgroundColour(wx.Colour(255, 255, 255))
         self.signup_btn.SetForegroundColour(wx.Colour(0, 0, 0))
-        font_btn = wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
+        font_btn = wx.Font(
+            12,
+            wx.FONTFAMILY_DEFAULT,
+            wx.FONTSTYLE_NORMAL,
+            wx.FONTWEIGHT_BOLD
+        )
         self.signup_btn.SetFont(font_btn)
         self.signup_btn.Bind(wx.EVT_BUTTON, self.on_signup)
         form_sizer.Add(self.signup_btn, 0, wx.EXPAND | wx.BOTTOM, 20)
@@ -159,7 +193,10 @@ class SignupFrame(wx.Frame):
             return response
 
         except ConnectionRefusedError:
-            return {"status": "error", "message": "Could not connect to server. Is it running?"}
+            return {
+                "status": "error",
+                "message": "Could not connect to server. Is it running?"
+            }
         except Exception as e:
             return {"status": "error", "message": f"Network error: {e}"}
 
@@ -181,7 +218,11 @@ class SignupFrame(wx.Frame):
         password = self.password_input.GetValue().strip()
         confirm = self.confirm_input.GetValue().strip()
         is_admin = 1 if self.admin_checkbox.GetValue() else 0
-        admin_secret = self.secret_input.GetValue().strip() if is_admin else None
+        admin_secret = (
+            self.secret_input.GetValue().strip()
+            if is_admin
+            else None
+        )
 
         # Validation
         if not username or not password:
@@ -222,8 +263,12 @@ class SignupFrame(wx.Frame):
         if response.get('status') == 'success':
             self.signup_success = True
             wx.MessageBox(
-                f'Account created successfully!\n{response.get("message", "")}\n\nPlease login with your new account.',
-                'Success', wx.OK | wx.ICON_INFORMATION)
+                f'Account created successfully!\n'
+                f'{response.get("message", "")}\n\n'
+                f'Please login with your new account.',
+                'Success',
+                wx.OK | wx.ICON_INFORMATION
+            )
             # Go back to login
             self.on_back_to_login(None)
         else:

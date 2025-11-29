@@ -8,6 +8,7 @@ from pathlib import Path
 
 STORIES_FOLDER = "stories"
 
+
 class MediaServer:
     def __init__(self, host='127.0.0.1', port=3333):
         self.host = host
@@ -55,7 +56,6 @@ class MediaServer:
         timestamp = int(time.time())
         ext = ".mp4" if media_type == "video" else ".jpg"
 
-        # אפשר גם פשוט 'story.jpg' או 'story.mp4' אם רוצים לדרוס תמיד
         filename = f"story_{username}_{timestamp}{ext}"
         full_path = os.path.join(STORIES_FOLDER, filename)
 
