@@ -1,5 +1,14 @@
+"""
+Gal Haham
+Real-time audio recording manager using PyAudio.
+Supports simultaneous recording with video,
+WAV file saving, and resource cleanup.
+"""
 import pyaudio
 import wave
+AUDIO_CHANNELS = 2
+STANDARD_SAMPLE_RATE = 44100
+CHUNK_SIZE = 1024
 
 
 class AudioRecorder:
@@ -18,9 +27,9 @@ class AudioRecorder:
         self.is_recording = False
 
         self.format = pyaudio.paInt16
-        self.channels = 2
-        self.rate = 44100
-        self.chunk = 1024
+        self.channels = AUDIO_CHANNELS
+        self.rate = STANDARD_SAMPLE_RATE
+        self.chunk = CHUNK_SIZE
 
     def start_recording(self):
         """Start the audio recording process."""

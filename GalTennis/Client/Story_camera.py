@@ -1,133 +1,55 @@
+"""
+Gal Haham
+Main camera UI for capturing photos and recording videos with audio.
+Handles camera preview, recording controls, FFmpeg merging,
+and story upload workflow.
+"""
 import wx
 import cv2
-import base64
-import threading
-import numpy as np
-import time
 import os
 import subprocess
 import sys
+import time
 
+from InitCameraThread import InitCameraThread
+from CameraReaderThread import CameraReaderThread
+from UploadThread import UploadThread
 from Audio_Recorder import AudioRecorder
 
-
-class InitCameraThread(threading.Thread):
-    def __init__(self, parent_frame):
-        super().__init__(daemon=True)
-        self.parent_frame = parent_frame
-        self.start()
-
-    def run(self):
-        camera = None
-        backends = [cv2.CAP_DSHOW, cv2.CAP_ANY]
-        for backend in backends:
-            try:
-                camera = cv2.VideoCapture(0, backend)
-                if camera.isOpened():
-                    break
-                camera.release()
-            except:
-                pass
-        if not camera or not camera.isOpened():
-            wx.CallAfter(self.parent_frame.on_camera_fail)
-            return
-
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        camera.set(cv2.CAP_PROP_FPS, 30)
-        camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-        wx.CallAfter(self.parent_frame.on_camera_ready, camera)
-
-
-class CameraReaderThread(threading.Thread):
-    def __init__(self, camera):
-        super().__init__(daemon=True)
-        self.camera = camera
-        self.is_running = True
-        self.current_frame = None
-        self.lock = threading.Lock()
-        self.start()
-
-    def run(self):
-        while self.is_running:
-            ret, frame = self.camera.read()
-            if ret:
-                with self.lock:
-                    self.current_frame = frame
-            time.sleep(0.01)
-
-    def stop(self):
-        self.is_running = False
-
-    def get_frame(self):
-        with self.lock:
-            return (
-                self.current_frame.copy()
-                if self.current_frame is not None
-                else None
-            )
-
-
-class UploadThread(threading.Thread):
-    def __init__(self, frame_ref,
-                 video_path, caption,
-                 media_type, callback, parent_frame):
-        super().__init__(daemon=True)
-        self.frame_ref = frame_ref
-        self.video_path = video_path
-        self.caption = caption
-        self.media_type = media_type
-        self.callback = callback
-        self.parent_frame = parent_frame
-        self.start()
-
-    def run(self):
-        time.sleep(1)
-        media_data = ""
-
-        if self.media_type == 'photo' and self.frame_ref is not None:
-            ret, buf = cv2.imencode('.jpg', self.frame_ref)
-            if ret:
-                media_data = base64.b64encode(buf).decode('utf-8')
-
-        elif (self.media_type == 'video' and
-              self.video_path and
-              os.path.exists(self.video_path)):
-
-            try:
-                with open(self.video_path, 'rb') as f:
-                    media_data = base64.b64encode(f.read()).decode('utf-8')
-            except Exception as e:
-                wx.CallAfter(
-                    self.parent_frame.post_failed,
-                    f"Video Read Error: {e}"
-                )
-                return
-
-        if self.callback:
-            wx.CallAfter(
-                self.callback,
-                self.caption,
-                self.media_type,
-                media_data
-            )
-
-        wx.CallAfter(
-            self.parent_frame.post_successful,
-            self.media_type
-        )
+SECONDS_IN_MINUTE = 60
+HALF = 2
+CHANNELS_INDEX = 2
+TOP_LEFT_Y = 0
+TOP_LEFT_X = 0
+EXIT_CODE_SUCCESS = 0
+TIMER_INTERVAL_MS = 33
+MIN_REQUIRED_ARGS_COUNT = 2
+USERNAME_ARG_INDEX = 1
+SECOND_ARG_INDEX = 2
 
 
 class StoryCameraFrame(wx.Frame):
+    """
+    Main wxPython UI window for capturing and posting stories (photo or video).
+
+    Responsibilities:
+    - Initialize and manage the camera preview.
+    - Handle photo capture and video recording with audio.
+    - Switch between live camera mode and preview mode.
+    - Manage FFmpeg merging, UI events, painting, and rendering.
+    - Interact with background worker threads
+     (CameraReaderThread, InitCameraThread).
+    - Dispatch the upload using UploadThread and handle success/failure UI.
+    """
+
     def __init__(self, parent, username, on_post_callback, closed_callback):
         super().__init__(
             parent,
             title="Create Story",
             size=wx.Size(480, 750),
             style=(
-                    wx.DEFAULT_FRAME_STYLE & ~
-                    (wx.RESIZE_BORDER | wx.MAXIMIZE_BOX)
+                wx.DEFAULT_FRAME_STYLE & ~
+                (wx.RESIZE_BORDER | wx.MAXIMIZE_BOX)
             )
         )
 
@@ -168,6 +90,20 @@ class StoryCameraFrame(wx.Frame):
         InitCameraThread(self)
 
     def init_ui(self):
+        """
+        Builds the full camera window UI layout.
+
+        Creates UI elements such as:
+        - Header bar and close button
+        - Camera preview panel
+        - Capture button
+        - Photo/video mode switch
+        - Recording timers and overlays
+        - Preview area and post/retake buttons
+
+        Also binds all UI events, timers, paint handlers,
+        and initializes periodic frame updates.
+        """
         main_panel = wx.Panel(self)
         main_panel.SetBackgroundColour(wx.Colour(0, 0, 0))
         self.main_sizer = wx.BoxSizer(wx.VERTICAL)
@@ -239,6 +175,7 @@ class StoryCameraFrame(wx.Frame):
                 wx.FONTWEIGHT_NORMAL
             )
         )
+
         # RECORDING INDICATOR
         self.recording_indicator = wx.Panel(
             self.camera_panel,
@@ -247,7 +184,7 @@ class StoryCameraFrame(wx.Frame):
         )
         self.recording_indicator.SetBackgroundColour(wx.Colour(220, 50, 50))
         rec_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        rec_dot = wx.StaticText(self.recording_indicator, label="⬤")
+        rec_dot = wx.StaticText(self.recording_indicator, label="●")
         rec_dot.SetForegroundColour(wx.WHITE)
         rec_dot.SetFont(
             wx.Font(
@@ -408,18 +345,28 @@ class StoryCameraFrame(wx.Frame):
 
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.update_frame, self.timer)
-        self.timer.Start(33)
+        self.timer.Start(TIMER_INTERVAL_MS)
 
     def on_camera_ready(self, camera):
+        """Called by InitCameraThread when camera successfully opens."""
+        print("[DEBUG on_camera_ready] Camera initialized")
         self.camera = camera
         self.is_capturing = True
         self.camera_reader_thread = CameraReaderThread(self.camera)
         self.title_text.SetLabel("Take Photo")
         self.loading_text.Hide()
         self.capture_enabled = True
+
+        # Force a refresh to make sure UI updates
         self.camera_panel.Refresh()
+        self.camera_panel.Update()
+        self.Refresh()
+        self.Update()
+
+        print("[DEBUG on_camera_ready] Camera ready!")
 
     def on_camera_fail(self):
+        """Called by InitCameraThread on failure"""
         self.is_capturing = False
         self.title_text.SetLabel("Camera Error")
         self.loading_text.SetLabel(" Failed to open camera")
@@ -431,6 +378,14 @@ class StoryCameraFrame(wx.Frame):
         self.on_close(None)
 
     def update_frame(self, event):
+        """
+        Timer callback that refreshes the camera preview and
+        updates video recording progress.
+
+        - Pulls latest frame from CameraReaderThread
+        - Writes frames into video_writer if recording
+        - Refreshes UI repaint
+        """
         if (
                 not self.preview_mode and
                 self.is_capturing and
@@ -442,32 +397,34 @@ class StoryCameraFrame(wx.Frame):
                 if self.is_recording and self.video_writer:
                     self.video_writer.write(frame)
                     elapsed = time.time() - self.recording_start_time
-                    mins = int(elapsed // 60)
-                    secs = int(elapsed % 60)
+                    mins = int(elapsed // SECONDS_IN_MINUTE)
+                    secs = int(elapsed % SECONDS_IN_MINUTE)
                     self.recording_timer.SetLabel(f"{mins}:{secs:02d}")
                     if elapsed >= self.max_video_duration:
                         self.stop_recording()
                 self.camera_panel.Refresh()
 
     def on_paint(self, event):
+        """Draw camera preview or preview image"""
         dc = wx.PaintDC(self.camera_panel)
         if self.preview_mode and self.preview_image:
-            dc.DrawBitmap(self.preview_image, 0, 0)
+            dc.DrawBitmap(self.preview_image, TOP_LEFT_X, TOP_LEFT_Y)
         elif self._current_frame_cache is not None:
             frame = cv2.cvtColor(self._current_frame_cache, cv2.COLOR_BGR2RGB)
-            h, w = frame.shape[:2]
+            h, w = frame.shape[:CHANNELS_INDEX]
             panel_size = self.camera_panel.GetSize()
             scale = min(panel_size.width / w, panel_size.height / h)
             new_w, new_h = int(w * scale), int(h * scale)
             frame = cv2.resize(frame, (new_w, new_h))
             image = wx.Image(new_w, new_h, frame.tobytes())
             bitmap = wx.Bitmap(image)
-            x = (panel_size.width - new_w) // 2
-            y = (panel_size.height - new_h) // 2
+            x = (panel_size.width - new_w) // HALF
+            y = (panel_size.height - new_h) // HALF
             dc.Clear()
             dc.DrawBitmap(bitmap, x, y)
 
     def on_paint_button(self, event):
+        """Draw circular capture button"""
         dc = wx.PaintDC(self.button_container)
         gc = wx.GraphicsContext.Create(dc)
         if gc:
@@ -492,6 +449,7 @@ class StoryCameraFrame(wx.Frame):
             )
 
     def on_button_click(self, event):
+        """Handle capture button click"""
         if not self.capture_enabled or not self.is_capturing:
             return
         if self.mode == 'photo':
@@ -508,6 +466,7 @@ class StoryCameraFrame(wx.Frame):
             self.button_container.Refresh()
 
     def switch_mode(self, mode):
+        """Switch between photo and video mode"""
         self.mode = mode
         if mode == 'photo':
             self.photo_btn.SetBackgroundColour(wx.Colour(255, 255, 255))
@@ -523,11 +482,17 @@ class StoryCameraFrame(wx.Frame):
             self.title_text.SetLabel("Record Video (Click to Start/Stop)")
 
     def capture_photo(self):
+        """
+        Captures the current frame and prepares it as a preview image.
+
+        Converts the frame to RGB, resizes to fit UI,
+         and switches to preview mode.
+        """
         if self._current_frame_cache is None:
             return
         self.captured_photo = self._current_frame_cache.copy()
         frame = cv2.cvtColor(self.captured_photo, cv2.COLOR_BGR2RGB)
-        h, w = frame.shape[:2]
+        h, w = frame.shape[:CHANNELS_INDEX]
         panel_size = self.camera_panel.GetSize()
         scale = min(panel_size.width / w, panel_size.height / h)
         new_w, new_h = int(w * scale), int(h * scale)
@@ -537,13 +502,21 @@ class StoryCameraFrame(wx.Frame):
         self.enter_preview_mode()
 
     def start_recording(self):
+        """
+        Starts recording a video + audio simultaneously.
+
+        - Creates a temporary mp4 file
+        - Starts OpenCV video writer
+        - Starts background AudioRecorder
+        - Displays recording timer and indicator
+        """
         if self._current_frame_cache is None or self.is_recording:
             return
 
         self.temp_video_path = os.path.join(os.getcwd(), "story_raw.mp4")
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        h, w = self._current_frame_cache.shape[:2]
+        h, w = self._current_frame_cache.shape[:CHANNELS_INDEX]
         self.video_writer = cv2.VideoWriter(
             self.temp_video_path,
             fourcc,
@@ -559,6 +532,14 @@ class StoryCameraFrame(wx.Frame):
         self.recording_indicator.Show()
 
     def stop_recording(self):
+        """
+        Stops video and audio recording.
+
+        - Stops writers and audio recorder
+        - Saves audio
+        - Merges video + audio using FFmpeg
+        - Switches to preview mode
+        """
         if not self.is_recording:
             return
 
@@ -580,7 +561,7 @@ class StoryCameraFrame(wx.Frame):
         frame_cap.release()
         if ret and frame is not None:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            h, w = frame.shape[:2]
+            h, w = frame.shape[:CHANNELS_INDEX]
             panel_size = self.camera_panel.GetSize()
             scale = min(panel_size.width / w, panel_size.height / h)
             new_w, new_h = int(w * scale), int(h * scale)
@@ -607,6 +588,14 @@ class StoryCameraFrame(wx.Frame):
         self.enter_preview_mode()
 
     def merge_audio_video(self, video_path, audio_path, output_path):
+        """
+        Uses FFmpeg to merge recorded video and audio.
+
+        If audio missing:
+            fallback: return video-only file.
+
+        Returns: final merged output path or None.
+        """
         if not os.path.exists(video_path):
             print("merge_audio_video: video file not found")
             return None
@@ -639,7 +628,7 @@ class StoryCameraFrame(wx.Frame):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            if result.returncode != 0:
+            if result.returncode != EXIT_CODE_SUCCESS:
                 print("ffmpeg error:", result.stderr.decode(errors='ignore'))
                 return None
             return output_path
@@ -647,16 +636,15 @@ class StoryCameraFrame(wx.Frame):
             print("merge_audio_video: exception while running ffmpeg:", e)
             return None
 
-    # ===================================================================
-    # PREVIEW MODE
-    # ===================================================================
     def enter_preview_mode(self):
+        """Switch to preview mode"""
         self.preview_mode = True
         self.camera_panel.Hide()
         self.preview_panel.Show()
         self.main_sizer.Layout()
 
     def exit_preview_mode(self):
+        """Exit preview mode and return to camera"""
         self.preview_mode = False
         self.camera_panel.Show()
         self.preview_panel.Hide()
@@ -666,9 +654,11 @@ class StoryCameraFrame(wx.Frame):
         self.camera_panel.Refresh()
 
     def on_retake(self, event):
+        """Return to camera mode"""
         self.exit_preview_mode()
 
     def on_watch_video(self, event):
+        """Open video in default player"""
         if self.preview_type != 'video':
             return
 
@@ -688,10 +678,8 @@ class StoryCameraFrame(wx.Frame):
         else:
             subprocess.call(('xdg-open', path_to_open))
 
-    # ===================================================================
-    # POST STORY
-    # ===================================================================
     def on_post(self, event):
+        """Post the story to server"""
         if self.preview_type == 'photo' and self.captured_photo is not None:
             UploadThread(
                 self.captured_photo,
@@ -716,29 +704,85 @@ class StoryCameraFrame(wx.Frame):
             wx.MessageBox("No media to post.", "Error", wx.OK | wx.ICON_ERROR)
 
     def post_successful(self, media_type):
+        """Called by UploadThread after successful upload"""
         wx.MessageBox(
             f"{media_type.capitalize()} posted successfully!",
             "Success",
             wx.OK | wx.ICON_INFORMATION
         )
-
         self.on_retake(None)
 
     def post_failed(self, message):
+        """Called by UploadThread on failure"""
         wx.MessageBox(
             f"Failed to post: {message}",
             "Error",
             wx.OK | wx.ICON_ERROR
         )
 
-    # ===================================================================
-    # CLOSE HANDLER
-    # ===================================================================
     def on_close(self, event):
+        """Clean up and close"""
+        # Stop camera threads
         if self.camera_reader_thread:
             self.camera_reader_thread.stop()
         if self.camera and self.camera.isOpened():
             self.camera.release()
-        self.Destroy()
+
+        # Call the callback BEFORE destroying
         if self.closed_callback:
             self.closed_callback()
+
+        # Now destroy the window
+        self.Destroy()
+
+
+if __name__ == '__main__':
+    import sys
+
+    # Check if called with arguments (from Client)
+    if len(sys.argv) >= MIN_REQUIRED_ARGS_COUNT:
+        username = sys.argv[USERNAME_ARG_INDEX]
+        callback_file = (
+            sys.argv[SECOND_ARG_INDEX]
+            if len(sys.argv) > SECOND_ARG_INDEX
+            else None
+        )
+
+        def on_post_subprocess(caption, media_type, media_data):
+            if callback_file:
+                import pickle
+                data = {
+                    'posted': True,
+                    'caption': caption,
+                    'media_type': media_type,
+                    'media_data': media_data
+                }
+                with open(callback_file, 'wb') as f:
+                    pickle.dump(data, f)
+
+        def on_closed_subprocess():
+            print("[DEBUG subprocess] Camera closed")
+
+        app = wx.App()
+        frame = StoryCameraFrame(None,
+                                 username,
+                                 on_post_subprocess,
+                                 on_closed_subprocess)
+        app.MainLoop()
+    else:
+        # Original test code
+        def test_callback(caption, media_type, media_data):
+            print(f"Callback received data.")
+            print(f"Caption: {caption}")
+            print(f"Media Type: {media_type}")
+            print(f"Media Data Length: {len(media_data)} characters")
+
+        def closed_callback():
+            print("Camera frame closed")
+
+        app = wx.App()
+        frame = StoryCameraFrame(None,
+                                 "test_user",
+                                 test_callback,
+                                 closed_callback)
+        app.MainLoop()

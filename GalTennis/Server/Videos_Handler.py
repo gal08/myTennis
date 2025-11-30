@@ -1,5 +1,17 @@
+"""
+Gal Haham
+Video metadata management system.
+Handles video upload registration and retrieval
+with category/difficulty validation.
+"""
 import sqlite3
 import time  # MUST be imported for generating timestamp
+
+TITLE_INDEX = 0
+UPLOADER_INDEX = 1
+CATEGORY_INDEX = 2
+LEVEL_INDEX = 3
+TIMESTAMP_INDEX = 4
 
 # DB configuration
 DB_NAME = 'users.db'
@@ -140,11 +152,11 @@ class VideosHandler:
 
             # Formatting output to match the client's expected keys
             videos = [{
-                "title": r[0],
-                "uploader": r[1],
-                "category": r[2],
-                "level": r[3],
-                "timestamp": r[4]
+                "title": r[TITLE_INDEX],
+                "uploader": r[UPLOADER_INDEX],
+                "category": r[CATEGORY_INDEX],
+                "level": r[LEVEL_INDEX],
+                "timestamp": r[TIMESTAMP_INDEX]
             } for r in rows]
 
             return {"status": "success", "videos": videos}

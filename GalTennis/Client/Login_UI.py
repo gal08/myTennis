@@ -1,3 +1,9 @@
+"""
+Gal Haham
+GUI login window with dark-themed interface.
+Handles user authentication, input validation,
+and server communication via Protocol.
+"""
 import wx
 import socket
 import json
@@ -9,6 +15,13 @@ PORT = 5000
 
 
 class LoginFrame(wx.Frame):
+    """
+    LoginFrame is a GUI window responsible for
+    handling the login process.
+    It displays username/password fields,
+    validates input, communicates with the
+    backend server, and returns the login result.
+    """
     def __init__(self):
         super().__init__(
             parent=None,

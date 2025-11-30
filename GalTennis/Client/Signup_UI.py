@@ -1,3 +1,9 @@
+"""
+Gal Haham
+Dark-themed user registration window.
+Validates passwords, handles admin registration with secret keys,
+and communicates with server.
+"""
 import wx
 import socket
 import json
@@ -6,9 +12,21 @@ from Server.Protocol import Protocol
 # --- Configuration ---
 HOST = '127.0.0.1'
 PORT = 5000
+MIN_PASSWORD_LENGTH = 4
+USER_ROLE_REGULAR = 0
+USER_ROLE_ADMIN = 1
 
 
 class SignupFrame(wx.Frame):
+    """
+    Signup window of the app.
+    Responsibilities:
+    - Display signup form.
+    - Validate inputs (password match, length).
+    - Support optional admin registration.
+    - Send SIGNUP request to server.
+    - Return to login screen after success.
+    """
     def __init__(self, login_frame=None):
         super().__init__(
             parent=None,
@@ -217,7 +235,11 @@ class SignupFrame(wx.Frame):
         username = self.username_input.GetValue().strip()
         password = self.password_input.GetValue().strip()
         confirm = self.confirm_input.GetValue().strip()
-        is_admin = 1 if self.admin_checkbox.GetValue() else 0
+        is_admin = (
+            USER_ROLE_ADMIN
+            if self.admin_checkbox.GetValue()
+            else USER_ROLE_REGULAR
+        )
         admin_secret = (
             self.secret_input.GetValue().strip()
             if is_admin
@@ -236,7 +258,7 @@ class SignupFrame(wx.Frame):
             self.confirm_input.Clear()
             return
 
-        if len(password) < 4:
+        if len(password) < MIN_PASSWORD_LENGTH:
             wx.MessageBox('Password must be at least 4 characters',
                           'Error', wx.OK | wx.ICON_ERROR)
             return

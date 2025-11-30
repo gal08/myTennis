@@ -1,3 +1,9 @@
+"""
+Gal Haham
+Main Tennis Social server application.
+Routes client requests, manages handlers, and coordinates
+video/story streaming servers.
+"""
 import socket
 import json
 import threading
@@ -21,6 +27,9 @@ PORT = 5000
 DB_FILE = 'users.db'
 VIDEO_FOLDER = "videos"
 STORY_FOLDER = "stories"
+PREVIEW_LENGTH = 200
+NOT_FOUND_INDEX = -1
+STARTUP_DELAY_SECONDS = 1
 
 
 class Server:
@@ -170,6 +179,8 @@ class Server:
             }
 
     def handle_client(self, client_socket):
+        """Handle client requests and route to appropriate handlers.
+        Manages request-response loop until client disconnects"""
         try:
             print("Client connected")
 
@@ -181,11 +192,11 @@ class Server:
                     break
 
                 start_index = data_raw.find('{')
-                if start_index == -1:
+                if start_index == NOT_FOUND_INDEX:
                     raise ValueError("JSON start character '{' not found.")
 
                 data_raw_json = data_raw[start_index:].strip()
-                print(f"[DEBUG] Cleaned JSON data: {data_raw_json[:200]}...")
+                print(f"[DEBUG] Cleaned JSON data: {data_raw_json[:PREVIEW_LENGTH]}...")
 
                 request_data = json.loads(data_raw_json)
                 print(f"[DEBUG] Parsed request_data: {request_data}")
@@ -253,11 +264,15 @@ class Server:
 
                 if should_start_media_server:
                     def start_media_server():
+                        """
+                        Start the media server in a separate thread.
+                        Waits 1 second before starting to ensure client is ready.
+                        """
                         try:
                             print(
                                 "Waiting 1 second before starting media..."
                             )
-                            time.sleep(1)
+                            time.sleep(STARTUP_DELAY_SECONDS)
                             print("Starting media server...")
                             story_saver_server.run()
                         except Exception as e:

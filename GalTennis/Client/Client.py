@@ -1,3 +1,10 @@
+"""
+Gal Haham
+Main client for Tennis Social application.
+Handles server connection, menus, video upload/viewing,
+stories, and user authentication.
+Primary entry point for the application.
+"""
 import socket
 import json
 import os
@@ -6,290 +13,28 @@ import time
 import wx
 import base64
 
-from Server.Protocol import Protocol
+from Protocol import Protocol
 from story_player_client import run_story_player_client
+from LoginSignupFrame import LoginSignupFrame
 
 # --- Import the Story camera module we integrated ---
-import Story_camera
+from Story_camera import StoryCameraFrame
 
 # --- Configuration ---
 HOST = '127.0.0.1'
 PORT = 5000
 VIDEO_FOLDER = "videos"
 DISPLAY_INDEX_OFFSET = 1
-
-
-class LoginSignupFrame(wx.Frame):
-    """GUI for Login and Signup"""
-
-    def __init__(self, client_instance):
-        super().__init__(
-            None,
-            title="Tennis Social - Login",
-            size=wx.Size(450, 400)
-        )
-        self.client = client_instance
-        self.login_successful = False
-
-        panel = wx.Panel(self)
-        panel.SetBackgroundColour(wx.Colour(245, 245, 245))
-
-        # Main sizer
-        main_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        # Title
-        title_font = wx.Font(
-            18,
-            wx.FONTFAMILY_DEFAULT,
-            wx.FONTSTYLE_NORMAL,
-            wx.FONTWEIGHT_BOLD
-        )
-
-        title = wx.StaticText(panel, label="🎾 Tennis Social")
-        title.SetFont(title_font)
-        title.SetForegroundColour(wx.Colour(40, 120, 80))
-        main_sizer.Add(title, 0, wx.ALL | wx.CENTER, 20)
-
-        # Notebook for tabs
-        notebook = wx.Notebook(panel)
-
-        # --- Login Tab ---
-        login_panel = wx.Panel(notebook)
-        login_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        # Username
-        login_sizer.Add(
-            wx.StaticText(login_panel, label="Username:"),
-            0,
-            wx.LEFT | wx.TOP,
-            10
-        )
-
-        self.login_username = wx.TextCtrl(login_panel, size=wx.Size(300, 30))
-        login_sizer.Add(self.login_username, 0, wx.ALL | wx.EXPAND, 10)
-
-        # Password
-        login_sizer.Add(
-            wx.StaticText(login_panel, label="Password:"),
-            0,
-            wx.LEFT,
-            10
-        )
-
-        self.login_password = wx.TextCtrl(
-            login_panel,
-            size=wx.Size(300, 30),
-            style=wx.TE_PASSWORD | wx.TE_PROCESS_ENTER
-        )
-
-        login_sizer.Add(self.login_password, 0, wx.ALL | wx.EXPAND, 10)
-
-        # Login button
-        login_btn = wx.Button(
-            login_panel,
-            label="Login",
-            size=wx.Size(300, 40)
-        )
-
-        login_btn.SetBackgroundColour(wx.Colour(76, 175, 80))
-        login_btn.SetForegroundColour(wx.WHITE)
-        login_btn.Bind(wx.EVT_BUTTON, self.on_login)
-        login_sizer.Add(login_btn, 0, wx.ALL | wx.EXPAND, 10)
-
-        # Status label for login
-        self.login_status = wx.StaticText(login_panel, label="")
-        self.login_status.SetForegroundColour(wx.Colour(200, 0, 0))
-        login_sizer.Add(self.login_status, 0, wx.ALL | wx.CENTER, 10)
-
-        login_panel.SetSizer(login_sizer)
-        notebook.AddPage(login_panel, "Login")
-
-        # --- Signup Tab ---
-        signup_panel = wx.Panel(notebook)
-        signup_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        # Username
-        signup_sizer.Add(
-            wx.StaticText(signup_panel, label="Username:"),
-            0,
-            wx.LEFT | wx.TOP,
-            10
-        )
-
-        self.signup_username = wx.TextCtrl(signup_panel, size=wx.Size(300, 30))
-        signup_sizer.Add(self.signup_username, 0, wx.ALL | wx.EXPAND, 10)
-
-        # Password
-        signup_sizer.Add(
-            wx.StaticText(signup_panel, label="Password:"),
-            0,
-            wx.LEFT,
-            10
-        )
-
-        self.signup_password = wx.TextCtrl(
-            signup_panel,
-            size=wx.Size(300, 30),
-            style=wx.TE_PASSWORD
-        )
-
-        signup_sizer.Add(self.signup_password, 0, wx.ALL | wx.EXPAND, 10)
-
-        # Admin checkbox
-        self.admin_checkbox = wx.CheckBox(
-            signup_panel,
-            label="Register as Manager/Admin"
-        )
-
-        signup_sizer.Add(self.admin_checkbox, 0, wx.ALL, 10)
-
-        # Admin secret (initially hidden)
-        signup_sizer.Add(
-            wx.StaticText(
-                signup_panel,
-                label="Admin Secret Key:"
-            ),
-            0,
-            wx.LEFT,
-            10
-        )
-
-        self.admin_secret = wx.TextCtrl(
-            signup_panel,
-            size=wx.Size(300, 30),
-            style=wx.TE_PASSWORD
-        )
-
-        self.admin_secret.Enable(False)
-        signup_sizer.Add(self.admin_secret, 0, wx.ALL | wx.EXPAND, 10)
-
-        # Bind checkbox event
-        self.admin_checkbox.Bind(wx.EVT_CHECKBOX, self.on_admin_checkbox)
-
-        # Signup button
-        signup_btn = wx.Button(
-            signup_panel,
-            label="Sign Up",
-            size=wx.Size(300, 40)
-        )
-
-        signup_btn.SetBackgroundColour(wx.Colour(33, 150, 243))
-        signup_btn.SetForegroundColour(wx.WHITE)
-        signup_btn.Bind(wx.EVT_BUTTON, self.on_signup)
-        signup_sizer.Add(signup_btn, 0, wx.ALL | wx.EXPAND, 10)
-
-        # Status label for signup
-        self.signup_status = wx.StaticText(signup_panel, label="")
-        self.signup_status.SetForegroundColour(wx.Colour(200, 0, 0))
-        signup_sizer.Add(self.signup_status, 0, wx.ALL | wx.CENTER, 10)
-
-        signup_panel.SetSizer(signup_sizer)
-        notebook.AddPage(signup_panel, "Sign Up")
-
-        main_sizer.Add(notebook, 1, wx.ALL | wx.EXPAND, 10)
-
-        panel.SetSizer(main_sizer)
-
-        self.Centre()
-        self.Show()
-
-        # Bind Enter key for login
-        self.login_password.Bind(wx.EVT_TEXT_ENTER, self.on_login)
-
-    def on_admin_checkbox(self, event):
-        """Enable/disable admin secret field based on checkbox"""
-        self.admin_secret.Enable(self.admin_checkbox.GetValue())
-
-    def on_login(self, event):
-        """Handle login button click"""
-        username = self.login_username.GetValue().strip()
-        password = self.login_password.GetValue().strip()
-
-        if not username or not password:
-            self.login_status.SetLabel("⚠ Please enter username and password")
-            return
-
-        self.login_status.SetLabel("Logging in...")
-        self.login_status.SetForegroundColour(wx.Colour(100, 100, 100))
-        wx.SafeYield()
-
-        response = self.client._send_request('LOGIN', {
-            'username': username,
-            'password': password
-        })
-
-        if response.get('status') == 'success':
-            self.client.username = username
-
-            # Get user admin status
-            users_res = self.client._send_request('GET_ALL_USERS', {})
-            if users_res.get('users'):
-                for user in users_res['users']:
-                    if user['username'] == username:
-                        self.client.is_admin = user['is_admin']
-                        break
-
-            self.login_status.SetLabel("✓ Login successful!")
-            self.login_status.SetForegroundColour(wx.Colour(0, 150, 0))
-            self.login_successful = True
-
-            wx.CallLater(500, self.Close)
-        else:
-            error_message = response.get('message', 'Login failed')
-
-            self.login_status.SetLabel(
-                f"✗ {error_message}"
-            )
-
-            self.login_status.SetForegroundColour(wx.Colour(200, 0, 0))
-
-    def on_signup(self, event):
-        """Handle signup button click"""
-        username = self.signup_username.GetValue().strip()
-        password = self.signup_password.GetValue().strip()
-        is_admin = 1 if self.admin_checkbox.GetValue() else 0
-
-        if not username or not password:
-            self.signup_status.SetLabel("⚠ Please enter username and password")
-            return
-
-        if is_admin and not self.admin_secret.GetValue().strip():
-            self.signup_status.SetLabel("⚠ Admin secret key required")
-            return
-
-        self.signup_status.SetLabel("Creating account...")
-        self.signup_status.SetForegroundColour(wx.Colour(100, 100, 100))
-        wx.SafeYield()
-
-        payload = {
-            'username': username,
-            'password': password,
-            'is_admin': is_admin
-        }
-
-        if is_admin:
-            payload['admin_secret'] = self.admin_secret.GetValue().strip()
-
-        response = self.client._send_request('SIGNUP', payload)
-
-        if response.get('status') == 'success':
-            self.signup_status.SetLabel("✓ Account created! Please login.")
-            self.signup_status.SetForegroundColour(wx.Colour(0, 150, 0))
-
-            # Clear fields
-            self.signup_username.SetValue("")
-            self.signup_password.SetValue("")
-            self.admin_secret.SetValue("")
-            self.admin_checkbox.SetValue(False)
-            self.admin_secret.Enable(False)
-        else:
-            signup_error_message = response.get('message', 'Signup failed')
-
-            self.signup_status.SetLabel(
-                f"✗ {signup_error_message}"
-            )
-
-            self.signup_status.SetForegroundColour(wx.Colour(200, 0, 0))
+ADMIN = 1
+REGULAR = 0
+ZERO_COUNT = 0
+ZERO_INDEX = 0
+ONE_BASED_OFFSET = 1
+TWO_SECOND_PAUSE = 2
+ATTEMPTS_LIMIT = 5
+HALF_SECOND_DELAY = 0.5
+PATH_LIST_HEAD = 0
+EXIT_CODE_ERROR = 1
 
 
 class Client:
@@ -302,7 +47,7 @@ class Client:
         self.host = HOST
         self.port = PORT
         self.username = None
-        self.is_admin = 0
+        self.is_admin = REGULAR
         if not os.path.exists(VIDEO_FOLDER):
             os.makedirs(VIDEO_FOLDER)
 
@@ -410,7 +155,7 @@ class Client:
                 request_payload
             )
 
-            likes_count = likes_res.get('count', 0)
+            likes_count = likes_res.get('count', ZERO_COUNT)
 
             video_index_to_display = i + DISPLAY_INDEX_OFFSET
 
@@ -441,8 +186,8 @@ class Client:
                 return
 
             try:
-                index = int(selection) - 1
-                if 0 <= index < len(videos):
+                index = int(selection) - ONE_BASED_OFFSET
+                if ZERO_INDEX <= index < len(videos):
                     self.handle_video_interaction(videos[index])
                     break
                 else:
@@ -510,7 +255,7 @@ class Client:
 
             if response.get('status') == 'success':
                 # Wait for server to initialize
-                time.sleep(2)
+                time.sleep(TWO_SECOND_PAUSE)
 
                 # Start client player (blocking until video ends)
                 run_video_player_client()
@@ -545,7 +290,7 @@ class Client:
         response = self._send_request('LIKE_VIDEO', payload)
 
         if response.get('status') == 'success':
-            print(f" {response['message']}")
+            print(f"❤ {response['message']}")
         else:
             print(
                 f"✗ Action failed: "
@@ -624,9 +369,9 @@ class Client:
             # Determine file type
             ext = os.path.splitext(story['filename'])[1].lower()
             file_type = (
-                "Image"
+                "📷 Image"
                 if ext in ['.jpg', '.jpeg', '.png', '.bmp']
-                else "Video"
+                else "🎥 Video"
             )
 
             print(
@@ -646,8 +391,8 @@ class Client:
                 return
 
             try:
-                index = int(selection) - 1
-                if 0 <= index < len(stories):
+                index = int(selection) - ONE_BASED_OFFSET
+                if ZERO_INDEX <= index < len(stories):
                     selected_story = stories[index]
                     print(
                         f"\n▶ Playing story: {selected_story['filename']}..."
@@ -661,12 +406,12 @@ class Client:
                         is_image = ext in ['.jpg', '.jpeg', '.png', '.bmp']
 
                         file_type = (
-                            " Image"
+                            "Image"
                             if is_image
-                            else "🎥 Video"
+                            else "Video"
                         )
 
-                        story_index = i + 1
+                        story_index = i + ONE_BASED_OFFSET
                         story_file = story['filename']
                         story_user = story['username']
                         story_time = story['timestamp']
@@ -691,7 +436,7 @@ class Client:
         response = self._send_request(story_request_type, story_payload)
 
         if response.get('status') == 'success':
-            time.sleep(2)
+            time.sleep(TWO_SECOND_PAUSE)
 
             run_story_player_client()
 
@@ -739,15 +484,15 @@ class Client:
         print("✓ Story registered in database")
 
         print("Waiting for media server to start...")
-        time.sleep(2)
+        time.sleep(TWO_SECOND_PAUSE)
 
         try:
-            from Client import transfer_story_to_server
+            import transfer_story_to_server
             transfer_story_to_server.run(file_name, self.username)
             print("✓ Story uploaded to media server!")
 
             print("Finalizing...")
-            time.sleep(2)
+            time.sleep(TWO_SECOND_PAUSE)
 
             self.verify_story_uploaded(file_name)
 
@@ -764,9 +509,13 @@ class Client:
                 print(f"⚠ Could not delete temp file: {e}")
 
     def verify_story_uploaded(self, filename):
+        """
+            Periodically checks if the newly uploaded
+            story is already available
+            on the server."""
         print("Verifying story availability...", end="", flush=True)
 
-        for i in range(5):
+        for i in range(ATTEMPTS_LIMIT):
             response = self._send_request('GET_STORIES', {})
 
             if response.get('status') == 'success':
@@ -778,41 +527,79 @@ class Client:
                         return True
 
             print(".", end="", flush=True)
-            time.sleep(0.5)
+            time.sleep(HALF_SECOND_DELAY)
 
         print(" ⚠ Story uploaded but may take a moment to appear")
         return False
 
     def open_story_camera(self):
-        """Opens story camera - creates new wx.App instance"""
+        """Opens story camera as separate process"""
         print("Opening camera...")
 
-        story_posted = {'posted': False}
-        camera_closed = {'closed': False}
+        story_posted = False
 
-        def on_post(caption, media_type, media_data):
-            story_posted['posted'] = True
-            self.on_story_post_callback(caption, media_type, media_data)
+        import tempfile
+        import pickle
 
-        def on_camera_closed():
-            camera_closed['closed'] = True
-
-        app = wx.App()
-
-        frame = Story_camera.StoryCameraFrame(
-            None,
-            self.username,
-            on_post,
-            on_camera_closed
+        # Create temp file for callback data
+        callback_file = os.path.join(
+            tempfile.gettempdir(),
+            f'story_callback_{self.username}_{time.time()}.pkl'
         )
 
-        frame.Show()
+        try:
+            # Get path to Story_camera.py
+            camera_script = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                'Story_camera.py'
+            )
 
-        app.MainLoop()
+            print(f"[DEBUG] Running camera: {camera_script}")
+            print("[DEBUG] Close the camera window when done.")
 
-        app.Destroy()
+            # Run as subprocess with its own wx.App
+            import subprocess
+            result = subprocess.run(
+                [sys.executable, camera_script, self.username, callback_file],
+                cwd=os.path.dirname(camera_script)
+            )
 
-        if story_posted['posted']:
+            print(f"[DEBUG] Camera closed (exit code: {result.returncode})")
+
+            # Check if story was posted
+            if os.path.exists(callback_file):
+                try:
+                    with open(callback_file, 'rb') as f:
+                        callback_data = pickle.load(f)
+
+                    if callback_data.get('posted'):
+                        story_posted = True
+                        caption = callback_data.get('caption', '')
+                        media_type = callback_data.get('media_type')
+                        media_data = callback_data.get('media_data')
+
+                        print("[DEBUG] Story data received from subprocess")
+                        self.on_story_post_callback(
+                            caption,
+                            media_type,
+                            media_data
+                        )
+
+                    # Clean up temp file
+                    os.remove(callback_file)
+                    print("[DEBUG] Cleaned up callback file")
+
+                except Exception as e:
+                    print(f"[DEBUG] Error reading callback: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+        except Exception as e:
+            print(f"✗ Camera error: {e}")
+            import traceback
+            traceback.print_exc()
+
+        if story_posted:
             print("\n✓ Story posted! Returning to menu...")
         else:
             print("\n✗ Camera closed without posting")
@@ -862,26 +649,35 @@ class Client:
 
         # Continue with console menu
         while True:
-            print("\n--- Main Menu ---")
-            print("1. Videos (View/Upload)")
-            print("2. Stories (View/Post)")
-            if self.is_admin:
-                print("M. Manager Commands (View All Users)")
-            print("Q. Quit")
+            try:
+                print("\n--- Main Menu ---")
+                print("1. Videos (View/Upload)")
+                print("2. Stories (View/Post)")
+                if self.is_admin:
+                    print("M. Manager Commands (View All Users)")
+                print("Q. Quit")
 
-            choice = input("Enter choice: ").strip().upper()
+                choice = input("Enter choice: ").strip().upper()
 
-            if choice == '1':
-                self.display_video_menu()
-            elif choice == '2':
-                self.display_stories_menu()
-            elif choice == 'M' and self.is_admin:
-                self.view_all_users()
-            elif choice == 'Q':
-                print("Goodbye!")
+                if choice == '1':
+                    self.display_video_menu()
+                elif choice == '2':
+                    self.display_stories_menu()
+                elif choice == 'M' and self.is_admin:
+                    self.view_all_users()
+                elif choice == 'Q':
+                    print("Goodbye!")
+                    break
+                else:
+                    print("Invalid choice.")
+            except KeyboardInterrupt:
+                print("\n\nGoodbye!")
                 break
-            else:
-                print("Invalid choice.")
+            except Exception as e:
+                print(f"✗ Error in main menu: {e}")
+                import traceback
+                traceback.print_exc()
+                print("Returning to menu...")
 
     def display_stories_menu(self):
         """Menu for stories functionality."""
@@ -904,6 +700,13 @@ class Client:
 
 
 if __name__ == '__main__':
+    import sys
+    import os
+
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.insert(PATH_LIST_HEAD, current_dir)
+
     try:
         from Video_Player_Client import run_video_player_client
 
@@ -911,4 +714,6 @@ if __name__ == '__main__':
         client_app.run()
     except ImportError as e:
         print(f"✗ CRITICAL ERROR: Required video player modules missing: {e}")
-        sys.exit(1)
+        print(f"Current directory: {current_dir}")
+        print(f"Files in directory: {os.listdir(current_dir)}")
+        sys.exit(EXIT_CODE_ERROR)

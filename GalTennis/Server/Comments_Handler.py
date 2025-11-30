@@ -1,8 +1,16 @@
+"""
+Gal Haham
+Video comment system handler.
+Manages adding and retrieving comments for videos with timestamp tracking.
+"""
 import sqlite3
 import time  # time is needed for generating the timestamp
 
 # DB configuration - Standardized name
 DB_NAME = 'users.db'
+USERNAME_INDEX = 0
+CONTENT_INDEX = 1
+TIMESTAMP_INDEX = 2
 
 
 class CommentsHandler:
@@ -116,9 +124,9 @@ class CommentsHandler:
 
             comments = [
                 {
-                    "username": row[0],
-                    "content": row[1],
-                    "timestamp": row[2]
+                    "username": row[USERNAME_INDEX],
+                    "content": row[CONTENT_INDEX],
+                    "timestamp": row[TIMESTAMP_INDEX]
                 }
                 for row in comments_data
             ]

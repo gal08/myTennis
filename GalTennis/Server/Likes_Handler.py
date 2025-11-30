@@ -1,7 +1,14 @@
+"""
+Gal Haham
+Video like/unlike system handler.
+Manages like toggles and like count retrieval with
+database persistence.
+"""
 import sqlite3
 import time
 
 DB_NAME = 'users.db'
+SINGLE_RESULT_COLUMN_INDEX = 0
 
 
 class LikesHandler:
@@ -54,7 +61,7 @@ class LikesHandler:
                 (video_title_key,)
             )
 
-            count = cursor.fetchone()[0]
+            count = cursor.fetchone()[SINGLE_RESULT_COLUMN_INDEX]
             conn.close()
             return {"status": "success", "count": count}
 

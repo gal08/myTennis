@@ -1,3 +1,8 @@
+"""
+Gal Haham
+Admin/manager privilege command handler.
+Currently supports retrieving all users and their admin status.
+"""
 import sqlite3
 
 # DB configuration - Standardized name

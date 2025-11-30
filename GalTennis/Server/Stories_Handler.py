@@ -1,3 +1,8 @@
+"""
+Gal Haham
+Story management system with 24-hour expiration.
+Handles story creation, retrieval, and automatic cleanup of expired content.
+"""
 import sqlite3
 import time
 import os
@@ -11,6 +16,17 @@ STORY_FOLDER = "stories"
 
 # DB configuration
 DB_NAME = 'users.db'
+FIRST_PART_INDEX = 0
+MIN_PARTS_WITH_SEPARATOR = 1
+HOURS_IN_A_DAY = 24
+USERNAME_INDEX = 0
+CONTENT_TYPE_INDEX = 1
+CONTENT_INDEX = 2
+FILENAME_INDEX = 3
+TIMESTAMP_INDEX = 4
+ID_INDEX = 5
+FILE_EXTENSION_INDEX = 1
+COLUMN_TYPE_INDEX = 1
 
 
 class StoriesHandler:
@@ -60,7 +76,10 @@ class StoriesHandler:
         else:
             # Ensure columns exist
             cursor.execute("PRAGMA table_info(stories)")
-            columns = [column[1] for column in cursor.fetchall()]
+            columns = [
+                column[COLUMN_TYPE_INDEX]
+                for column in cursor.fetchall()
+            ]
 
             if 'content_type' not in columns:
                 print(
@@ -96,7 +115,7 @@ class StoriesHandler:
             }
 
         timestamp = int(time.time())
-        ext = os.path.splitext(filename)[1]
+        ext = os.path.splitext(filename)[FILE_EXTENSION_INDEX]
         unique_filename = f"{username}_{timestamp}{ext}"
 
         try:
@@ -148,7 +167,7 @@ class StoriesHandler:
         """
         twenty_four_hours_ago = (
                 datetime.now() -
-                timedelta(hours=24)
+                timedelta(hours=HOURS_IN_A_DAY)
         ).strftime("%Y-%m-%d %H:%M:%S")
 
         conn = None
@@ -168,12 +187,12 @@ class StoriesHandler:
             stories = []
             for row in rows:
                 story = {
-                    "username": row[0],
-                    "content_type": row[1],
-                    "content": row[2],
-                    "filename": row[3],
-                    "timestamp": row[4],
-                    "id": row[5],
+                    "username": row[USERNAME_INDEX],
+                    "content_type": row[CONTENT_TYPE_INDEX],
+                    "content": row[CONTENT_INDEX],
+                    "filename": row[FILENAME_INDEX],
+                    "timestamp": row[TIMESTAMP_INDEX],
+                    "id": row[ID_INDEX],
                 }
 
                 # Add file path for media
@@ -197,11 +216,24 @@ class StoriesHandler:
 
     def delete_expired_stories(self):
         """
-        Deletes stories older than 24 hours and their media files.
-        """
+    Deletes stories older than 24 hours from both the database and disk.
+
+    Behavior:
+        - Calculates a cutoff datetime (24 hours ago).
+        - Selects expired media entries from the database.
+        - Removes their associated files from the filesystem.
+        - Deletes matching DB records.
+        - Returns a status JSON response with the number of deleted stories.
+
+    Returns:
+        dict: {
+            "status": "success" or "error",
+            "message": description string
+        }
+    """
         cutoff = (
                 datetime.now() -
-                timedelta(hours=24)
+                timedelta(hours=HOURS_IN_A_DAY)
         ).strftime("%Y-%m-%d %H:%M:%S")
 
         conn = None
@@ -246,6 +278,15 @@ class StoriesHandler:
                 conn.close()
 
     def handle_request(self, request_type, payload):
+        """
+            Dispatches a request from the client to the matching handler.
+
+            Supported requests:
+                - "ADD_STORY": Saves a new story.
+                - "GET_STORIES": Returns a combined view
+                 of stories from DB and folder.
+                - "DELETE_EXPIRED_STORIES": Removes old stories (>24h)."""
+
         if request_type == "ADD_STORY":
             return self.add_story(payload)
         if request_type == "GET_STORIES":
@@ -257,7 +298,22 @@ class StoriesHandler:
 
     def get_stories_from_folder(self):
         """
-        Returns all stories from folder AND database (combined view)
+        Returns a combined list of story metadata from both the filesystem
+    and the database.
+
+    Behavior:
+        1. Ensures the STORIES folder exists.
+        2. Collects the list of media files from the filesystem.
+        3. Loads recent (≤24 hours) story records from the database.
+        4. Matches DB entries with actual existing media files.
+        5. Adds media files that exist in the folder but do NOT appear in DB.
+           (User might have manually added a file)
+        6. Normalizes and infers metadata:
+            - filename
+            - username (derived from filename if needed)
+            - content_type ("photo" or "video")
+            - timestamp
+        7. Sorts results newest → oldest.
         """
         try:
             if not os.path.exists(STORY_FOLDER):
@@ -272,7 +328,8 @@ class StoriesHandler:
             media_files = {
                 f
                 for f in files_in_folder
-                if os.path.splitext(f)[1].lower() in valid_extensions
+                if os.path.splitext(f)[FILE_EXTENSION_INDEX].lower()
+                in valid_extensions
             }
 
             stories = []
@@ -282,7 +339,7 @@ class StoriesHandler:
 
             cutoff = (
                     datetime.now() -
-                    timedelta(hours=24)
+                    timedelta(hours=HOURS_IN_A_DAY)
             ).strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute("""
                 SELECT username, content_type, filename, timestamp
@@ -314,8 +371,8 @@ class StoriesHandler:
 
                     username_parts = filename.split('_')
                     username = (
-                        username_parts[0]
-                        if len(username_parts) > 1
+                        username_parts[FIRST_PART_INDEX]
+                        if len(username_parts) > MIN_PARTS_WITH_SEPARATOR
                         else "Unknown"
                     )
 

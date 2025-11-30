@@ -1,3 +1,8 @@
+"""
+Gal Haham
+Combined login and signup GUI with tabbed interface.
+Supports regular and admin user registration with secret key validation.
+"""
 import wx
 USER_ROLE_REGULAR = 0
 USER_ROLE_ADMIN = 1
@@ -209,7 +214,7 @@ class LoginSignupFrame(wx.Frame):
         self.login_status.SetForegroundColour(wx.Colour(100, 100, 100))
         wx.SafeYield()
 
-        response = self.client.send_request('LOGIN', {
+        response = self.client._send_request('LOGIN', {
             'username': username,
             'password': password
         })
@@ -218,7 +223,7 @@ class LoginSignupFrame(wx.Frame):
             self.client.username = username
 
             # Get user admin status
-            users_res = self.client.send_request('GET_ALL_USERS', {})
+            users_res = self.client._send_request('GET_ALL_USERS', {})
             if users_res.get('users'):
                 for user in users_res['users']:
                     if user['username'] == username:
@@ -272,7 +277,7 @@ class LoginSignupFrame(wx.Frame):
         if is_admin:
             payload['admin_secret'] = self.admin_secret.GetValue().strip()
 
-        response = self.client.send_request('SIGNUP', payload)
+        response = self.client._send_request('SIGNUP', payload)
 
         if response.get('status') == 'success':
             self.signup_status.SetLabel("✓ Account created! Please login.")
@@ -288,5 +293,4 @@ class LoginSignupFrame(wx.Frame):
             self.signup_status.SetLabel(
                 f"✗ {response.get('message', 'Signup failed')}"
             )
-
             self.signup_status.SetForegroundColour(wx.Colour(200, 0, 0))

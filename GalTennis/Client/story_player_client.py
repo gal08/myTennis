@@ -1,3 +1,8 @@
+"""
+Gal Haham
+Client for receiving and playing stories from remote server.
+Handles video frames with synchronized audio playback using OpenCV and PyAudio.
+"""
 import socket
 import cv2
 import pickle
@@ -7,9 +12,31 @@ import numpy as np
 
 STORY_SERVER_HOST = '127.0.0.1'
 STORY_SERVER_PORT = 6001
+FRAME_INCREMENT = 1
+MODULO_SUCCESS = 0
+FPS_RATE = 30
+MESSAGE_LENGTH_FIELD_SIZE = 4
+FIRST_UNPACKED_INDEX = 0
+STARTING_COUNT = 0
+DISPLAY_INDEX_OFFSET = 1
+FRAME_DELAY_MS = 1
+KEY_ESCAPE = 27
+IS_WINDOW_VISIBLE = 1
 
 
 class StoryPlayer:
+    """
+        StoryPlayer is responsible for receiving and playing a recorded story
+        from a remote server.
+
+        Responsibilities:
+        - Connect to the story server over TCP.
+        - Receive story metadata (resolution, FPS, audio, total frames).
+        - Initialize video and audio playback pipelines.
+        - Receive story packets (video frame + optional audio chunk).
+        - Display frames using OpenCV and play synchronized audio with PyAudio.
+        - Support skipping, disconnecting, and cleanup of resources.
+    """
     def __init__(self, host=STORY_SERVER_HOST, port=STORY_SERVER_PORT):
         self.host = host
         self.port = port
@@ -19,7 +46,7 @@ class StoryPlayer:
         self.pyaudio_instance = None
 
     def connect(self):
-        """Connect to server and receive story info"""
+        """Connect to server and receive story metadata."""
         try:
             print(f"Connecting to server {self.host}:{self.port}...")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -27,11 +54,13 @@ class StoryPlayer:
             print(f"✓ Connected to server")
 
             # Receive story info
-            info_size_data = self._recv_all(4)
+            info_size_data = self._recv_all(MESSAGE_LENGTH_FIELD_SIZE)
             if not info_size_data:
                 raise ConnectionError("Failed to receive story info size")
 
-            info_size = struct.unpack("!L", info_size_data)[0]
+            info_size = (
+                struct.unpack("!L", info_size_data)[FIRST_UNPACKED_INDEX]
+            )
             info_data = self._recv_all(info_size)
             if not info_data:
                 raise ConnectionError("Failed to receive story info data")
@@ -60,7 +89,7 @@ class StoryPlayer:
             return False
 
     def _initialize_audio(self):
-        """Initialize PyAudio for playback"""
+        """Initialize PyAudio stream for playback"""
         try:
             self.pyaudio_instance = pyaudio.PyAudio()
             self.audio_stream = self.pyaudio_instance.open(
@@ -108,7 +137,7 @@ class StoryPlayer:
             return None
 
     def play_story(self):
-        """Main playback loop"""
+        """Main playback loop - displays video and plays audio."""
         if not self.story_info:
             print("No story info available")
             return
@@ -121,7 +150,7 @@ class StoryPlayer:
             self.story_info['height']
         )
 
-        frame_count = 0
+        frame_count = STARTING_COUNT
         print(f"Playing {self.story_info['type']} story...")
 
         while True:
@@ -136,7 +165,8 @@ class StoryPlayer:
             # Add overlay info
             info_text = (
                 f"{self.story_info['type']} | "
-                f"Frame: {frame_count + 1}/{self.story_info['total_frames']}"
+                f"Frame: {frame_count + DISPLAY_INDEX_OFFSET}/"
+                f"{self.story_info['total_frames']}"
             )
 
             cv2.putText(frame, info_text, (10, 30),
@@ -177,22 +207,24 @@ class StoryPlayer:
                 except Exception as e:
                     print(f"Audio playback error: {e}")
 
-            frame_count += 1
+            frame_count += FRAME_INCREMENT
 
-            if frame_count % 30 == 0:
+            if frame_count % FPS_RATE == MODULO_SUCCESS:
                 print(
                     f"Playing frame {frame_count}/"
                     f"{self.story_info['total_frames']}"
                 )
 
             # Check for user input
-            key = cv2.waitKey(1) & 0xFF
-            if key == 27 or key == ord('q') or key == ord('Q'):
+            key = cv2.waitKey(FRAME_DELAY_MS) & 0xFF
+            if key == KEY_ESCAPE or key == ord('q') or key == ord('Q'):
                 print("Story skipped by user")
                 break
 
             # Check if window closed
-            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+            if cv2.getWindowProperty(window_name,
+                                     cv2.WND_PROP_VISIBLE) < IS_WINDOW_VISIBLE:
+                # ...
                 print("Window closed")
                 break
 
@@ -201,7 +233,7 @@ class StoryPlayer:
         print(f"Playback finished ({frame_count} frames)")
 
     def cleanup(self):
-        """Clean up resources"""
+        """Release resources such as audio stream, PyAudio and socket."""
         if self.audio_stream:
             self.audio_stream.stop_stream()
             self.audio_stream.close()
@@ -213,7 +245,7 @@ class StoryPlayer:
 
 
 def run_story_player_client():
-    """Main client entry point"""
+    """Entry point for running the story player client."""
     player = StoryPlayer()
     if player.connect():
         player.play_story()

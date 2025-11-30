@@ -1,3 +1,8 @@
+"""
+Gal Haham
+User authentication system with SQLite backend.
+Manages signup/login for regular users and admins with secret key validation.
+"""
 import sqlite3
 import hashlib
 
@@ -7,6 +12,10 @@ DB_NAME = 'users.db'
 # ADMIN SECRET KEY - Change this to your own secret!
 # In production, this should be in an environment variable or config file
 ADMIN_SECRET_KEY = "SecretKey"
+DB_TIMEOUT_SECONDS = 10
+IS_ADMIN_DEFAULT = 0
+USER_ID_INDEX = 0
+ADMIN = 1
 
 
 class Authentication:
@@ -29,7 +38,7 @@ class Authentication:
 
     def _initialize_db(self):
         """Ensures the 'users' table exists."""
-        conn = sqlite3.connect(DB_NAME, timeout=10)
+        conn = sqlite3.connect(DB_NAME, timeout=DB_TIMEOUT_SECONDS)
         cursor = conn.cursor()
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS users (
@@ -51,13 +60,19 @@ class Authentication:
             return False
         return provided_secret == ADMIN_SECRET_KEY
 
-    def signup(self, username, password, is_admin=0, admin_secret=None):
+    def signup(
+            self,
+            username,
+            password,
+            is_admin=IS_ADMIN_DEFAULT,
+            admin_secret=None
+    ):
         """
         Registers a new user.
         If is_admin=1, requires valid admin_secret to be provided.
         """
         # Security check: If trying to register as admin, verify the secret
-        if is_admin == 1:
+        if is_admin == ADMIN:
             if not self._verify_admin_secret(admin_secret):
                 return {
                     "status": "error",
@@ -65,7 +80,7 @@ class Authentication:
                 }
 
         try:
-            conn = sqlite3.connect(DB_NAME, timeout=10)
+            conn = sqlite3.connect(DB_NAME, timeout=DB_TIMEOUT_SECONDS)
             cursor = conn.cursor()
 
             try:
@@ -107,7 +122,7 @@ class Authentication:
     def login(self, username, password):
         """Performs login and verification."""
         try:
-            conn = sqlite3.connect(DB_NAME, timeout=10)
+            conn = sqlite3.connect(DB_NAME, timeout=DB_TIMEOUT_SECONDS)
             cursor = conn.cursor()
 
             # Check username and password
@@ -121,7 +136,7 @@ class Authentication:
             conn.close()
 
             if user_data:
-                is_admin = user_data[0]
+                is_admin = user_data[USER_ID_INDEX]
                 return {
                     "status": "success",
                     "message": "Login successful",
@@ -155,7 +170,7 @@ class Authentication:
             }
 
         if request_type == 'SIGNUP':
-            is_admin = payload.get('is_admin', 0)
+            is_admin = payload.get('is_admin', IS_ADMIN_DEFAULT)
             admin_secret = payload.get('admin_secret', None)
             return self.signup(username, password, is_admin, admin_secret)
         elif request_type == 'LOGIN':
