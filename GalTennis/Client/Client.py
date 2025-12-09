@@ -13,15 +13,17 @@ import time
 import wx
 import base64
 
+import Show_all_stories_in_wx
 from Protocol import Protocol
 from story_player_client import run_story_player_client
 from LoginSignupFrame import LoginSignupFrame
-
+from Read_server_ip import readServerIp
+from Show_all_stories_in_wx import run
 # --- Import the Story camera module we integrated ---
 from Story_camera import StoryCameraFrame
 
 # --- Configuration ---
-HOST = '127.0.0.1'
+HOST = readServerIp()
 PORT = 5000
 VIDEO_FOLDER = "videos"
 DISPLAY_INDEX_OFFSET = 1
@@ -35,6 +37,7 @@ ATTEMPTS_LIMIT = 5
 HALF_SECOND_DELAY = 0.5
 PATH_LIST_HEAD = 0
 EXIT_CODE_ERROR = 1
+GET_VIDEOS_PHOTOS = 5
 
 
 class Client:
@@ -240,9 +243,9 @@ class Client:
         print("3. View/Add Comments")
         print("4. Back to Video List")
 
-        choice = input("Enter choice: ").strip()
+        choice = int(input("Enter choice: "))
 
-        if choice == '1':
+        if choice == 1:
             print(f"▶ Playing video: {video_title}...")
 
             # Request server to start streaming this video
@@ -267,13 +270,13 @@ class Client:
                     f"{response.get('message', 'Unknown error')}"
                 )
 
-        elif choice == '2':
+        elif choice == 2:
             self.toggle_like(video_title)
 
-        elif choice == '3':
+        elif choice == 3:
             self.view_and_add_comments(video_title)
 
-        elif choice == '4':
+        elif choice == 4:
             return
 
         else:
@@ -337,6 +340,19 @@ class Client:
                 )
 
     # --- Stories Management ---
+
+    def display_all_stories(self):
+        response = self._send_request('GET_IMAGES_OF_ALL_VIDEOS', {})
+
+        if response.get('status') != 'success':
+            print(
+                f"✗ Could not retrieve stories: "
+                f"{response.get('message', 'Server error.')}"
+            )
+
+            return
+        Show_all_stories_in_wx.run()
+
 
     def display_stories(self):
         """Retrieves and displays all available
@@ -682,9 +698,10 @@ class Client:
     def display_stories_menu(self):
         """Menu for stories functionality."""
         print("\n--- Stories Menu ---")
-        print("1. View live stories")
+        print("1. choose one story to show")
         print("2. Post a new story (open camera)")
-        print("3. Back to Main Menu")
+        print("3. open all stories wx")
+        print("4. Back to Main Menu")
 
         choice = input("Enter choice: ").strip()
 
@@ -694,6 +711,8 @@ class Client:
             # Open the camera UI (integrated)
             self.open_story_camera()
         elif choice == '3':
+            self.display_all_stories()
+        elif choice == '4':
             return
         else:
             print("Invalid choice.")

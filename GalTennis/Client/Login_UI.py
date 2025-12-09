@@ -8,9 +8,10 @@ import wx
 import socket
 import json
 from Server.Protocol import Protocol
+from Read_server_ip import readServerIp
 
 # --- Configuration ---
-HOST = '127.0.0.1'
+HOST = readServerIp()
 PORT = 5000
 
 
