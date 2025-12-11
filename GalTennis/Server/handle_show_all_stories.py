@@ -6,53 +6,93 @@ import base64
 from pathlib import Path
 
 
-class VideoServer:
-    def __init__(self, video_folder="videos", port=2222):
-        self.video_folder = video_folder
+class MediaServer:
+    def __init__(self, media_folder="stories", port=2222):
+        self.media_folder = media_folder
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind(('localhost', self.port))
 
-    def extract_thumbnail(self, video_path):
-        """Extract a preview thumbnail from the video"""
-        cap = cv2.VideoCapture(video_path)
-        ret, frame = cap.read()
-        cap.release()
+        # Supported file extensions
+        self.video_extensions = ('.mp4', '.avi', '.mkv', '.mov')
+        self.image_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.gif')
 
-        if ret:
-            # Save the image as JPEG
-            _, buffer = cv2.imencode('.jpg', frame)
-            # Convert to base64
-            img_base64 = base64.b64encode(buffer).decode('utf-8')
-            return img_base64
+    def extract_thumbnail(self, file_path, file_type):
+        """Extract preview thumbnail"""
+        if file_type == 'image':
+            # For images - simply read the image
+            img = cv2.imread(file_path)
+            if img is not None:
+                # Resize image to maximum 200x200
+                height, width = img.shape[:2]
+                max_size = 200
+
+                if height > width:
+                    new_height = max_size
+                    new_width = int(width * (max_size / height))
+                else:
+                    new_width = max_size
+                    new_height = int(height * (max_size / width))
+
+                img = cv2.resize(img, (new_width, new_height))
+                _, buffer = cv2.imencode('.jpg', img)
+                img_base64 = base64.b64encode(buffer).decode('utf-8')
+                return img_base64
+
+        elif file_type == 'video':
+            # For videos - extract first frame
+            cap = cv2.VideoCapture(file_path)
+            ret, frame = cap.read()
+            cap.release()
+
+            if ret:
+                _, buffer = cv2.imencode('.jpg', frame)
+                img_base64 = base64.b64encode(buffer).decode('utf-8')
+                return img_base64
+
         return None
 
-    def get_videos_data(self):
-        """Collect all video information"""
-        videos_data = []
+    def get_media_data(self):
+        """Collect all media file information"""
+        media_data = []
 
-        if not os.path.exists(self.video_folder):
-            os.makedirs(self.video_folder)
-            return videos_data
+        if not os.path.exists(self.media_folder):
+            os.makedirs(self.media_folder)
+            return media_data
 
-        for file in os.listdir(self.video_folder):
-            if file.endswith(('.mp4', '.avi', '.mkv', '.mov')):
-                video_path = os.path.join(self.video_folder, file)
-                thumbnail = self.extract_thumbnail(video_path)
+        for file in os.listdir(self.media_folder):
+            file_lower = file.lower()
+            file_path = os.path.join(self.media_folder, file)
 
+            # Check if it's a video
+            if file_lower.endswith(self.video_extensions):
+                thumbnail = self.extract_thumbnail(file_path, 'video')
                 if thumbnail:
-                    videos_data.append({
+                    media_data.append({
                         'name': file,
-                        'path': video_path,
-                        'thumbnail': thumbnail
+                        'path': file_path,
+                        'thumbnail': thumbnail,
+                        'type': 'video'
                     })
 
-        return videos_data
+            # Check if it's an image
+            elif file_lower.endswith(self.image_extensions):
+                thumbnail = self.extract_thumbnail(file_path, 'image')
+                if thumbnail:
+                    media_data.append({
+                        'name': file,
+                        'path': file_path,
+                        'thumbnail': thumbnail,
+                        'type': 'image'
+                    })
+
+        return media_data
 
     def start(self):
         """Start listening for client requests"""
         self.sock.listen(5)
         print(f"Server listening on port {self.port}")
+        print(f"Media folder: {os.path.abspath(self.media_folder)}")
 
         while True:
             client, address = self.sock.accept()
@@ -62,15 +102,17 @@ class VideoServer:
                 # Receive request from client
                 request = client.recv(1024).decode('utf-8')
 
-                if request == "GET_VIDEOS":
-                    # Collect information about all videos
-                    videos_data = self.get_videos_data()
+                if request == "GET_MEDIA":
+                    # Collect information about all media files
+                    media_data = self.get_media_data()
 
                     # Send response in JSON format
-                    response = json.dumps(videos_data, ensure_ascii=False)
+                    response = json.dumps(media_data, ensure_ascii=False)
                     client.sendall(response.encode('utf-8'))
 
-                    print(f"Sent {len(videos_data)} videos to client")
+                    videos_count = sum(1 for m in media_data if m['type'] == 'video')
+                    images_count = sum(1 for m in media_data if m['type'] == 'image')
+                    print(f"Sent {videos_count} videos and {images_count} images to client")
 
             except Exception as e:
                 print(f"Error: {e}")
@@ -79,5 +121,5 @@ class VideoServer:
 
 
 def run():
-    server = VideoServer()
+    server = MediaServer()
     server.start()

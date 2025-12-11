@@ -18,9 +18,7 @@ from Protocol import Protocol
 from story_player_client import run_story_player_client
 from LoginSignupFrame import LoginSignupFrame
 from Read_server_ip import readServerIp
-from Show_all_stories_in_wx import run
-# --- Import the Story camera module we integrated ---
-from Story_camera import StoryCameraFrame
+
 
 # --- Configuration ---
 HOST = readServerIp()
@@ -126,77 +124,14 @@ class Client:
             print("Invalid choice.")
 
     def view_videos(self):
-        """Retrieves and displays the list of videos from the server."""
+        """Retrieve list of videos from server and return them (GUI uses this)."""
         response = self._send_request('GET_VIDEOS', {})
 
-        if response.get('status') != 'success' or not response.get('videos'):
-            error_message = response.get(
-                "message",
-                "No videos found or server error."
-            )
+        if response.get('status') != 'success':
+            return None
 
-            print(
-                f"✗ Could not retrieve videos: {error_message}"
-            )
-
-            return
-
-        videos = response['videos']
-        print("\n--- Available Videos ---")
-
-        if not videos:
-            print("No videos have been uploaded yet.")
-            return
-
-        for i, video in enumerate(videos):
-            request_payload = {
-                "video_title": video["title"]
-            }
-
-            likes_res = self._send_request(
-                "GET_LIKES_COUNT",
-                request_payload
-            )
-
-            likes_count = likes_res.get('count', ZERO_COUNT)
-
-            video_index_to_display = i + DISPLAY_INDEX_OFFSET
-
-            video_title = video["title"]
-            video_category = video["category"]
-            video_level = video["level"]
-            video_uploader = video["uploader"]
-
-            message = (
-                f"[{video_index_to_display}] "
-                f"Title: {video_title} | "
-                f"Category: {video_category} | "
-                f"Level: {video_level} | "
-                f"Uploader: {video_uploader} | "
-                f"Likes: {likes_count}"
-            )
-
-            print(message)
-
-        while True:
-            user_input = input(
-                "Enter video number to select, or (B)ack: "
-            )
-
-            selection = user_input.strip().upper()
-
-            if selection == 'B':
-                return
-
-            try:
-                index = int(selection) - ONE_BASED_OFFSET
-                if ZERO_INDEX <= index < len(videos):
-                    self.handle_video_interaction(videos[index])
-                    break
-                else:
-                    print("Invalid number.")
-            except ValueError:
-                print("Invalid input.")
+        videos = response.get('videos', [])
+        return videos
 
     def upload_video_metadata(self):
         """Collects metadata and sends the ADD_VIDEO request to the server."""
@@ -343,20 +278,18 @@ class Client:
 
     def display_all_stories(self):
         response = self._send_request('GET_IMAGES_OF_ALL_VIDEOS', {})
+        print(response)
 
-        if response.get('status') != 'success':
+        """if response.get('status') != 'success':
             print(
                 f"✗ Could not retrieve stories: "
                 f"{response.get('message', 'Server error.')}"
             )
-
-            return
+            return"""
         Show_all_stories_in_wx.run()
 
-
     def display_stories(self):
-        """Retrieves and displays all available
-        stories from the stories folder."""
+        """Retrieves and displays all available stories from the stories folder."""
         response = self._send_request('GET_STORIES', {})
 
         print("\n--- Available Stories ---")
@@ -366,81 +299,44 @@ class Client:
                 f"✗ Could not retrieve stories: "
                 f"{response.get('message', 'Server error.')}"
             )
-
             return
 
         stories = response.get('stories', [])
 
         if not stories:
             print("No stories found in the stories folder.")
-            print(
-                "Tip: Add images (.jpg, .png) or videos (.mp4) "
-                "to the 'stories' folder"
-            )
-
+            print("Tip: Add images (.jpg, .png) or videos (.mp4) to the 'stories' folder")
             return
 
-        # Display all available stories
+        # Display stories
         for i, story in enumerate(stories):
-            # Determine file type
             ext = os.path.splitext(story['filename'])[1].lower()
-            file_type = (
-                "📷 Image"
-                if ext in ['.jpg', '.jpeg', '.png', '.bmp']
-                else "🎥 Video"
-            )
+
+            file_type = "📷 Image" if ext in ['.jpg', '.jpeg', '.png', '.bmp'] else "🎥 Video"
 
             print(
-                f"[{i + 1}] "
-                f"{file_type} | "
-                f"{story['filename']} | "
-                f"From: {story['username']} | "
-                f"{story['timestamp']}"
+                f"[{i + 1}] {file_type} | {story['filename']} | "
+                f"From: {story['username']} | {story['timestamp']}"
             )
 
+        # Selection loop
         while True:
-            selection = input(
-                "\nEnter story number to view, or (B)ack: "
-            ).strip().upper()
+            selection = input("\nEnter story number to view, or (B)ack: ").strip().upper()
 
             if selection == 'B':
                 return
 
             try:
-                index = int(selection) - ONE_BASED_OFFSET
-                if ZERO_INDEX <= index < len(stories):
-                    selected_story = stories[index]
-                    print(
-                        f"\n▶ Playing story: {selected_story['filename']}..."
-                    )
-
-                    self.play_story(selected_story['filename'])
-
-                    print("\n--- Available Stories ---")
-                    for i, story in enumerate(stories):
-                        ext = os.path.splitext(story['filename'])[1].lower()
-                        is_image = ext in ['.jpg', '.jpeg', '.png', '.bmp']
-
-                        file_type = (
-                            "Image"
-                            if is_image
-                            else "Video"
-                        )
-
-                        story_index = i + ONE_BASED_OFFSET
-                        story_file = story['filename']
-                        story_user = story['username']
-                        story_time = story['timestamp']
-
-                        print(
-                            f"[{story_index}] {file_type} | {story_file} | "
-                            f"From: {story_user} | {story_time}"
-                        )
-
+                index = int(selection) - 1
+                if 0 <= index < len(stories):
+                    selected = stories[index]
+                    print(f"\n▶ Playing story: {selected['filename']}...")
+                    self.play_story(selected['filename'])
                 else:
                     print("Invalid number.")
             except ValueError:
                 print("Invalid input.")
+
 
     def play_story(self, story_filename):
         """Plays a story (image or video)"""
@@ -644,56 +540,33 @@ class Client:
     # --- Main Loop ---
 
     def run(self):
-        """Main client application loop."""
+        import wx
 
-        # Show GUI login/signup
+        # Create the wx app once
         app = wx.App()
+
+        # ---------------------
+        # LOGIN SCREEN
+        # ---------------------
         login_frame = LoginSignupFrame(self)
+        login_frame.Show()
         app.MainLoop()
 
-        # Check if login was successful
-        if not login_frame.login_successful or not self.username:
-            print("Login cancelled or failed. Exiting...")
+        # After login window closes:
+        if not getattr(login_frame, "login_successful", False):
+            print("Login cancelled or failed.")
             return
 
-        role_name = "regular user" if not self.is_admin else "manager"
+        # ---------------------
+        # MAIN MENU GUI
+        # ---------------------
+        from MainMenuFrame import MainMenuFrame
 
-        welcome_prefix = "\n✓ Welcome "
-        welcome_suffix = f"! You are logged in as a {role_name}."
+        main_menu = MainMenuFrame(username=self.username, client_ref=self)
+        main_menu.Show()
 
-        print(f"{welcome_prefix}{self.username}{welcome_suffix}")
-
-        # Continue with console menu
-        while True:
-            try:
-                print("\n--- Main Menu ---")
-                print("1. Videos (View/Upload)")
-                print("2. Stories (View/Post)")
-                if self.is_admin:
-                    print("M. Manager Commands (View All Users)")
-                print("Q. Quit")
-
-                choice = input("Enter choice: ").strip().upper()
-
-                if choice == '1':
-                    self.display_video_menu()
-                elif choice == '2':
-                    self.display_stories_menu()
-                elif choice == 'M' and self.is_admin:
-                    self.view_all_users()
-                elif choice == 'Q':
-                    print("Goodbye!")
-                    break
-                else:
-                    print("Invalid choice.")
-            except KeyboardInterrupt:
-                print("\n\nGoodbye!")
-                break
-            except Exception as e:
-                print(f"✗ Error in main menu: {e}")
-                import traceback
-                traceback.print_exc()
-                print("Returning to menu...")
+        # Run GUI main loop
+        app.MainLoop()
 
     def display_stories_menu(self):
         """Menu for stories functionality."""

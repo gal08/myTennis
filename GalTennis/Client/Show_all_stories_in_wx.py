@@ -1,45 +1,49 @@
+import time
+
 import wx
 import socket
 import json
 import base64
 import io
-import Read_server_ip
+from story_player_client import run_story_player_client
+TWO_SECOND_PAUSE = 2
 
 
-class VideoGridPanel(wx.Panel):
-    def __init__(self, parent):
+class MediaGridPanel(wx.Panel):
+    def __init__(self, parent, client_ref):
         super().__init__(parent)
-        self.videos_data = []
+        self.media_data = []
+        self.client_ref = client_ref
 
         # Create interface
         main_sizer = wx.BoxSizer(wx.VERTICAL)
 
-        # Button to load videos
-        btn_load = wx.Button(self, label="Load Videos from Server")
-        btn_load.Bind(wx.EVT_BUTTON, self.on_load_videos)
+        # Button to load media
+        btn_load = wx.Button(self, label="Load Images and Videos from Server")
+        btn_load.Bind(wx.EVT_BUTTON, self.on_load_media)
         main_sizer.Add(btn_load, 0, wx.ALL | wx.CENTER, 10)
 
-        # ScrolledWindow for video grid
+        # ScrolledWindow for media grid
         self.scroll = wx.ScrolledWindow(self, style=wx.VSCROLL)
         self.scroll.SetScrollRate(0, 20)
 
-        # GridSizer for displaying videos
+        # GridSizer for displaying media
         self.grid_sizer = wx.GridSizer(cols=3, hgap=10, vgap=10)
         self.scroll.SetSizer(self.grid_sizer)
 
         main_sizer.Add(self.scroll, 1, wx.EXPAND | wx.ALL, 10)
         self.SetSizer(main_sizer)
 
-    def on_load_videos(self, event):
-        """Load videos from server"""
+    def on_load_media(self, event):
+        """Load media from server"""
         try:
             # Connect to server
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            ip = Read_server_ip.readServerIp()
+            ip = '127.0.0.1'
             sock.connect((ip, 2222))
 
             # Send request
-            sock.sendall("GET_VIDEOS".encode('utf-8'))
+            sock.sendall("GET_MEDIA".encode('utf-8'))
 
             # Receive response
             response = b""
@@ -52,36 +56,36 @@ class VideoGridPanel(wx.Panel):
             sock.close()
 
             # Decode response
-            self.videos_data = json.loads(response.decode('utf-8'))
+            self.media_data = json.loads(response.decode('utf-8'))
 
-            # Display videos
-            self.display_videos()
+            # Display media
+            self.display_media()
 
         except Exception as e:
             wx.MessageBox(f"Error connecting to server: {e}", "Error", wx.OK | wx.ICON_ERROR)
 
-    def display_videos(self):
-        """Display videos in grid"""
+    def display_media(self):
+        """Display media in grid"""
         # Clear previous grid
         self.grid_sizer.Clear(True)
 
-        for video_data in self.videos_data:
-            # Create panel for each video
-            video_panel = self.create_video_panel(video_data)
-            self.grid_sizer.Add(video_panel, 0, wx.EXPAND)
+        for media_item in self.media_data:
+            # Create panel for each media item
+            media_panel = self.create_media_panel(media_item)
+            self.grid_sizer.Add(media_panel, 0, wx.EXPAND)
 
         self.scroll.Layout()
         self.scroll.FitInside()
 
-    def create_video_panel(self, video_data):
-        """Create individual panel for video"""
+    def create_media_panel(self, media_item):
+        """Create individual panel for media item"""
         panel = wx.Panel(self.scroll, style=wx.BORDER_SIMPLE)
         panel.SetBackgroundColour(wx.Colour(240, 240, 240))
 
         sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Convert image from base64
-        img_data = base64.b64decode(video_data['thumbnail'])
+        img_data = base64.b64decode(media_item['thumbnail'])
         img_stream = io.BytesIO(img_data)
         img = wx.Image(img_stream)
 
@@ -91,15 +95,18 @@ class VideoGridPanel(wx.Panel):
 
         # Create StaticBitmap
         img_ctrl = wx.StaticBitmap(panel, bitmap=bitmap)
-        img_ctrl.Bind(wx.EVT_LEFT_DCLICK, lambda evt: self.on_video_double_click(video_data))
+        img_ctrl.Bind(wx.EVT_LEFT_DCLICK, lambda evt: self.on_media_double_click(media_item))
         img_ctrl.SetCursor(wx.Cursor(wx.CURSOR_HAND))
 
         sizer.Add(img_ctrl, 0, wx.ALL | wx.CENTER, 5)
 
-        # Video name
-        label = wx.StaticText(panel, label=video_data['name'])
+        # File name with icon by type
+        media_type_icon = "🎬" if media_item['type'] == 'video' else "🖼️"
+        label_text = f"{media_type_icon} {media_item['name']}"
+
+        label = wx.StaticText(panel, label=label_text)
         label.SetFont(wx.Font(9, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
-        label.Bind(wx.EVT_LEFT_DCLICK, lambda evt: self.on_video_double_click(video_data))
+        label.Bind(wx.EVT_LEFT_DCLICK, lambda evt: self.on_media_double_click(media_item))
         label.SetCursor(wx.Cursor(wx.CURSOR_HAND))
         sizer.Add(label, 0, wx.ALL | wx.CENTER, 5)
 
@@ -108,29 +115,43 @@ class VideoGridPanel(wx.Panel):
 
         return panel
 
-    def on_video_double_click(self, video_data):
-        """Handle double click on video - add your logic here"""
-        print(f"Double clicked on: {video_data['name']}")
-        print(f"Full path: {video_data['path']}")
+    def on_media_double_click(self, media_item):
+        """Handle double click on media item"""
+        story_name = media_item['name']
 
-        # Add your code here to handle the video
-        # For example: open separate window, play video, edit, etc.
+        print(f"Double clicked on: {story_name}")
+        print(f"Type: {media_item['type']}")
+        print(f"Full path: {media_item['path']}")
 
-        wx.MessageBox(f"Double clicked on:\n{video_data['name']}", "Double Click", wx.OK | wx.ICON_INFORMATION)
+        try:
+            story_request_type = 'PLAY_STORY'
+            story_payload = {'filename': story_name}
+
+            response = self.client_ref._send_request(story_request_type, story_payload)
+            if response.get('status') == 'success':
+                time.sleep(TWO_SECOND_PAUSE)
+                run_story_player_client()
+
+        except Exception as e:
+            wx.MessageBox(
+                f"Error starting story player server:\n{str(e)}",
+                "Error",
+                wx.OK | wx.ICON_ERROR
+            )
 
 
 class MainFrame(wx.Frame):
-    def __init__(self):
-        super().__init__(None, title="Video Display System", size=(800, 600))
+    def __init__(self, client_ref):
+        super().__init__(None, title="Images and Videos Display System", size=(800, 600))
 
         # Create main panel
-        panel = VideoGridPanel(self)
+        panel = MediaGridPanel(self, client_ref)
 
         self.Centre()
         self.Show()
 
 
-def run():
+def run(client_ref):
     app = wx.App()
-    frame = MainFrame()
+    frame = MainFrame(client_ref)
     app.MainLoop()
