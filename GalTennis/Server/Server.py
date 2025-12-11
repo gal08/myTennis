@@ -23,7 +23,13 @@ from Stories_Handler import StoriesHandler
 from Manger_commands import ManagerCommands
 from Video_Player_Server import run_video_player_server
 from story_player_server import run_story_player_server
-from handle_show_all_stories import run
+from handle_show_all_stories import run as run_stories_display_server
+
+# Import for video grid display
+try:
+    from handle_show_all_videos import run as run_videos_display_server
+except ImportError:
+    run_videos_display_server = None
 
 # --- Configuration ---
 HOST = '0.0.0.0'
@@ -44,6 +50,8 @@ class Server:
         self.running = False
         self.video_server_thread = None
         self.story_server_thread = None
+        self.story_upload_server_thread = None
+        self.story_upload_server_running = False
 
         # Initialize handlers
         self.auth_handler = Authentication()
@@ -57,8 +65,6 @@ class Server:
         os.makedirs(VIDEO_FOLDER, exist_ok=True)
         os.makedirs(STORY_FOLDER, exist_ok=True)
 
-        print("Server Handlers Initialized.")
-
     # ----------------------------
     # Start the main TCP server
     # ----------------------------
@@ -70,12 +76,21 @@ class Server:
         self.server_socket.listen(5)
         self.running = True
 
-        print(f"Server running on {self.host}:{self.port}, waiting for clients...")
+        print("="*50)
+        print("🎾 Tennis Social Server")
+        print("="*50)
+        print(f"Main Server: {self.host}:{self.port}")
+        print(f"Story Upload: {self.host}:3333")
+        print("="*50)
+        print("Server is ready and waiting for clients...")
+        print("="*50)
+
+        # Start the story upload server in background (always running)
+        self.start_story_upload_server()
 
         try:
             while self.running:
                 client_socket, addr = self.server_socket.accept()
-                print(f"Connection established with {addr}")
 
                 client_thread = threading.Thread(
                     target=self.handle_client,
@@ -93,7 +108,26 @@ class Server:
     def stop(self):
         self.running = False
         self.server_socket.close()
-        print("Server stopped.")
+        print("\nServer stopped.")
+
+    # -----------------------------------
+    # STORY UPLOAD SERVER (Port 3333)
+    # -----------------------------------
+    def start_story_upload_server(self):
+        """Start the story media upload server (runs on port 3333)"""
+        if not self.story_upload_server_running:
+            def run_upload_server():
+                try:
+                    story_saver_server.run()
+                except Exception as e:
+                    print(f"[ERROR] Story upload server: {e}")
+
+            self.story_upload_server_thread = threading.Thread(
+                target=run_upload_server,
+                daemon=True
+            )
+            self.story_upload_server_thread.start()
+            self.story_upload_server_running = True
 
     # -----------------------------------
     # PLAY_VIDEO (Used by Video menu)
@@ -117,7 +151,6 @@ class Server:
             )
             thread.start()
 
-            print(f"Video streaming server started for: {video_title}")
             return {"status": "success", "message": "Video stream started"}
 
         except Exception as e:
@@ -145,7 +178,6 @@ class Server:
             )
             thread.start()
 
-            print(f"Story streaming server started for: {story_filename}")
             return {"status": "success", "message": "Story stream started"}
 
         except Exception as e:
@@ -154,9 +186,9 @@ class Server:
     # -----------------------------------
     # STORY LIST / WX DISPLAY TRIGGER
     # -----------------------------------
-    def get_videos_data(self):
+    def get_stories_display_data(self):
         try:
-            thread = threading.Thread(target=run, daemon=True)
+            thread = threading.Thread(target=run_stories_display_server, daemon=True)
             thread.start()
 
             return {"status": "success", "message": "All stories displayed"}
@@ -165,16 +197,48 @@ class Server:
             return {"status": "error", "message": f"Failed: {e}"}
 
     # -----------------------------------
+    # VIDEO LIST / WX DISPLAY TRIGGER
+    # -----------------------------------
+    def get_videos_display_data(self):
+        """Start the video thumbnail server for grid display"""
+        try:
+            if run_videos_display_server is None:
+                return {"status": "error", "message": "Video display server not available"}
+
+            thread = threading.Thread(target=run_videos_display_server, daemon=True)
+            thread.start()
+
+            return {"status": "success", "message": "Video grid display server started"}
+
+        except Exception as e:
+            return {"status": "error", "message": f"Failed to start video display: {e}"}
+
+    # -----------------------------------
+    # ADD_STORY HANDLER
+    # -----------------------------------
+    def handle_add_story(self, payload):
+        """
+        Handle ADD_STORY request.
+        Ensures upload server is running before story upload.
+        """
+        # Make sure upload server is running
+        if not self.story_upload_server_running:
+            self.start_story_upload_server()
+            time.sleep(1)  # Give server time to start
+
+        # Process the story metadata
+        response = self.stories_handler.handle_request('ADD_STORY', payload)
+
+        return response
+
+    # -----------------------------------
     # MAIN REQUEST ROUTING
     # -----------------------------------
     def handle_client(self, client_socket):
         try:
-            print("Client connected")
-
             while True:
                 data_raw = Protocol.recv(client_socket)
                 if not data_raw:
-                    print("Client disconnected")
                     break
 
                 start_index = data_raw.find('{')
@@ -216,7 +280,11 @@ class Server:
                 # ------------------------
                 # Stories DB ops
                 # ------------------------
-                elif request_type in ['ADD_STORY', 'GET_STORIES']:
+                elif request_type == 'ADD_STORY':
+                    # Special handler that ensures upload server is running
+                    response = self.handle_add_story(payload)
+
+                elif request_type == 'GET_STORIES':
                     response = self.stories_handler.handle_request(request_type, payload)
 
                 # ------------------------
@@ -232,7 +300,7 @@ class Server:
                     response = self.handle_play_video(payload)
 
                 # ------------------------
-                # PLAY STORY — WX STREAMING VERSION
+                # PLAY STORY – WX STREAMING VERSION
                 # ------------------------
                 elif request_type == 'PLAY_STORY_MEDIA':
                     filename = payload.get("filename")
@@ -265,7 +333,7 @@ class Server:
                         }
 
                 # ------------------------
-                # PLAY STORY — OLD PLAYER
+                # PLAY STORY – OLD PLAYER
                 # ------------------------
                 elif request_type == 'PLAY_STORY':
                     response = self.handle_play_story(payload)
@@ -274,16 +342,21 @@ class Server:
                 # WX "SHOW ALL STORIES"
                 # ------------------------
                 elif request_type == 'GET_IMAGES_OF_ALL_VIDEOS':
-                    response = self.get_videos_data()
+                    response = self.get_stories_display_data()
+
+                # ------------------------
+                # WX "SHOW ALL VIDEOS IN GRID"
+                # ------------------------
+                elif request_type == 'GET_ALL_VIDEOS_GRID':
+                    response = self.get_videos_display_data()
 
                 # ------------------------
                 # SEND RESPONSE
                 # ------------------------
                 Protocol.send(client_socket, json.dumps(response))
-                print(f"[DEBUG] Response sent: {response.get('status')}")
 
         except Exception as e:
-            print(f"Error handling client: {e}")
+            print(f"[ERROR] Client handling: {e}")
             try:
                 Protocol.send(
                     client_socket,
@@ -294,7 +367,6 @@ class Server:
 
         finally:
             client_socket.close()
-            print("Client socket closed.")
 
 
 if __name__ == '__main__':

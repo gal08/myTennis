@@ -8,7 +8,23 @@ from Video_Audio_Client_Frame import VideoAudioClientFrame
 
 
 def run_video_player_client():
-    VideoAudioClientFrame()
+    """
+    Run the video player client.
+    Properly handles wx.App creation and cleanup.
+    """
+    # Check if there's already a wx.App running
+    app = wx.App.Get()
+
+    if app is None:
+        # No app exists, create a new one
+        app = wx.App()
+        frame = VideoAudioClientFrame()
+        app.MainLoop()
+    else:
+        # App already exists (called from within another wx app)
+        # Just create the frame
+        frame = VideoAudioClientFrame()
+        # Don't call MainLoop again - it's already running
 
 
 

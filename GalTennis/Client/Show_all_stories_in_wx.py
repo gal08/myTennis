@@ -6,6 +6,7 @@ import json
 import base64
 import io
 from story_player_client import run_story_player_client
+
 TWO_SECOND_PAUSE = 2
 
 
@@ -116,7 +117,7 @@ class MediaGridPanel(wx.Panel):
         return panel
 
     def on_media_double_click(self, media_item):
-        """Handle double click on media item"""
+        """Handle double click on media item - play story"""
         story_name = media_item['name']
 
         print(f"Double clicked on: {story_name}")
@@ -141,8 +142,14 @@ class MediaGridPanel(wx.Panel):
 
 
 class MainFrame(wx.Frame):
-    def __init__(self, client_ref):
-        super().__init__(None, title="Images and Videos Display System", size=(800, 600))
+    def __init__(self, client_ref, parent_menu=None):
+        super().__init__(None, title="📸 All Stories Display", size=(800, 600))
+
+        self.client_ref = client_ref
+        self.parent_menu = parent_menu  # Reference to StoriesMenuFrame
+
+        # Bind close event
+        self.Bind(wx.EVT_CLOSE, self.on_close_window)
 
         # Create main panel
         panel = MediaGridPanel(self, client_ref)
@@ -150,8 +157,17 @@ class MainFrame(wx.Frame):
         self.Centre()
         self.Show()
 
+    def on_close_window(self, event):
+        """Handle window close - return to stories menu"""
+        # Show parent menu if it exists
+        if self.parent_menu:
+            self.parent_menu.Show()
 
-def run(client_ref):
-    app = wx.App()
-    frame = MainFrame(client_ref)
-    app.MainLoop()
+        # Continue with close
+        event.Skip()
+
+
+def run(client_ref, parent_menu=None):
+    # Don't create new app - use existing one!
+    frame = MainFrame(client_ref, parent_menu=parent_menu)
+    # Don't call app.MainLoop() - we're already in one!

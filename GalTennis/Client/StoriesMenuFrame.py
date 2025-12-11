@@ -1,21 +1,20 @@
 import wx
-
-from Client import Show_all_stories_in_wx
-from Show_all_stories_in_wx import MainFrame as ShowAllStoriesFrame
+from Show_all_stories_in_wx import run as show_all_stories
 from Story_camera import StoryCameraFrame
-from Show_all_stories_in_wx import run
 
 
 class StoriesMenuFrame(wx.Frame):
     """
     GUI menu for Stories functionality.
+    Can return to parent menu (MainMenuFrame).
     """
 
-    def __init__(self, username, client_ref):
+    def __init__(self, username, client_ref, parent_menu=None):
         super().__init__(parent=None, title="Stories Menu", size=(400, 350))
 
         self.username = username
         self.client_ref = client_ref
+        self.parent_menu = parent_menu  # Reference to MainMenuFrame
 
         panel = wx.Panel(self)
         panel.SetBackgroundColour(wx.Colour(245, 245, 245))
@@ -38,7 +37,7 @@ class StoriesMenuFrame(wx.Frame):
         btn_view_all = wx.Button(panel, label="🎬 View All Stories", size=(250, 45))
         btn_view_all.Bind(wx.EVT_BUTTON, self.on_view_all_stories)
 
-        btn_back = wx.Button(panel, label="⬅ Back to Main Menu", size=(250, 45))
+        btn_back = wx.Button(panel, label="⬅️ Back to Main Menu", size=(250, 45))
         btn_back.Bind(wx.EVT_BUTTON, self.on_back)
 
         # Add buttons to layout
@@ -54,25 +53,14 @@ class StoriesMenuFrame(wx.Frame):
     # Handlers
     # -------------------------------------------------
 
-    def on_view_single_story(self, event):
-        """Opens GUI to view a single story."""
-        from Show_all_stories_in_wx import MainFrame as SingleStoryFrame
-        SingleStoryFrame()
-
     def on_view_all_stories(self, event):
         """Opens GUI for viewing ALL stories."""
-        #from Show_all_stories_in_wx import MainFrame as ShowAllStoriesFrame
-        #ShowAllStoriesFrame(username=self.username)
+        self.Hide()  # Hide this menu
+
         response = self.client_ref._send_request('GET_IMAGES_OF_ALL_VIDEOS', {})
         print(response)
 
-        """if response.get('status') != 'success':
-            print(
-                f"✗ Could not retrieve stories: "
-                f"{response.get('message', 'Server error.')}"
-            )
-            return"""
-        Show_all_stories_in_wx.run(self.client_ref)
+        show_all_stories(self.client_ref, parent_menu=self)
 
     def on_post_story(self, event):
         """Opens the camera window to post a story."""
@@ -91,4 +79,9 @@ class StoriesMenuFrame(wx.Frame):
         )
 
     def on_back(self, event):
+        """Return to main menu"""
         self.Close()
+
+        # Show parent menu if it exists
+        if self.parent_menu:
+            self.parent_menu.Show()
