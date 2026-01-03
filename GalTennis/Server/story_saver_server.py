@@ -3,7 +3,7 @@ Gal Haham
 Media upload server for stories.
 Receives Base64-encoded photos/videos from clients
 and saves them to the stories folder.
-IMPROVED: Can handle multiple uploads without restarting
+REFACTORED: handle_client split into smaller helper methods
 """
 import socket
 import base64
@@ -27,7 +27,6 @@ class MediaServer:
     """
     TCP media server that receives photos or videos from clients,
     decodes them, and saves them into the stories folder.
-
     IMPROVED: Runs continuously and accepts multiple uploads.
     """
     def __init__(self, host=HOST, port=PORT):
@@ -53,85 +52,171 @@ class MediaServer:
             server_socket.bind((self.host, self.port))
             server_socket.listen(MULTI_CONNECTION_BACKLOG)
             self.is_running = True
+            print(
+                f"[STORY UPLOAD] Server listening on "
+                f"{self.host}: {self.port}"
+            )
+            print(f"[STORY UPLOAD] Ready to receive story uploads...")
 
             while self.is_running:
                 try:
                     # Accept new client connection
                     client_socket, addr = server_socket.accept()
+                    print(f"[STORY UPLOAD] Client connected: {addr}")
 
                     # Handle this client
                     self.handle_client(client_socket)
 
                     # Close client connection
                     client_socket.close()
+                    print(f"[STORY UPLOAD] Client {addr} disconnected")
 
                 except Exception as e:
-                    # Silently continue on error
+                    print(f"[STORY UPLOAD] Error handling client: {e}")
                     continue
 
         except OSError as e:
-            print(f"[ERROR] Story upload server socket error: {e}")
+            print(f"[STORY UPLOAD] Socket error: {e}")
         finally:
             server_socket.close()
+            print("[STORY UPLOAD] Server stopped")
 
     def handle_client(self, client_socket):
         """
         Receives a media upload request from the client and saves it.
+        REFACTORED: Delegates to helper methods for clarity.
         """
         try:
-            # Receive size header
-            size_data = client_socket.recv(SIZE_HEADER_BYTES)
-            if not size_data:
+            # Step 1: Receive data from client
+            payload_data = self._receive_payload(client_socket)
+            if not payload_data:
                 return
 
-            # Get payload length
-            payload_len = struct.unpack('!I', size_data)[SINGLE_ELEMENT_INDEX]
-
-            # Receive full payload
-            data = b''
-            while len(data) < payload_len:
-                remaining = payload_len - len(data)
-                chunk_size = min(RECV_CHUNK_SIZE_BYTES, remaining)
-                chunk = client_socket.recv(chunk_size)
-                if not chunk:
-                    break
-                data += chunk
-
-            if len(data) != payload_len:
+            # Step 2: Parse and extract media info
+            media_info = self._parse_media_payload(payload_data)
+            if not media_info:
                 return
 
-            # Parse JSON payload
-            payload = json.loads(data.decode())
-            media_b64 = payload["data"]
-            media_type = payload.get("media_type", "image")
-            username = payload.get("username", "user")
+            # Step 3: Save media file
+            saved_path = self._save_media_file(media_info)
 
-            # Decode base64 to binary
-            file_bytes = base64.b64decode(media_b64)
+            # Step 4: Send success response
+            self._send_success_response(
+                client_socket,
+                saved_path,
+                len(media_info['file_bytes'])
+            )
 
-            # Generate unique filename
-            timestamp = int(time.time())
-            ext = ".mp4" if media_type == "video" else ".jpg"
-            filename = f"story_{username}_{timestamp}{ext}"
-            full_path = os.path.join(STORIES_FOLDER, filename)
+        except json.JSONDecodeError as e:
+            print(f"[STORY UPLOAD] JSON error: {e}")
+            self._send_error_response(client_socket, "Invalid JSON")
+        except Exception as e:
+            print(f"[STORY UPLOAD] Error: {e}")
+            self._send_error_response(client_socket, str(e))
 
-            # Save file
-            with open(full_path, "wb") as f:
-                f.write(file_bytes)
+    def _receive_payload(self, client_socket):
+        """
+        Receive the complete payload from client.
+        Returns payload data or None if failed.
+        """
+        # Receive size header
+        size_data = client_socket.recv(SIZE_HEADER_BYTES)
+        if not size_data:
+            print("[STORY UPLOAD] No data received")
+            return None
 
-            # Send success response
+        # Get payload length
+        payload_len = struct.unpack('!I', size_data)[SINGLE_ELEMENT_INDEX]
+        print(f"[STORY UPLOAD] Expecting {payload_len} bytes")
+
+        # Receive full payload in chunks
+        data = self._receive_data_chunks(client_socket, payload_len)
+
+        # Verify received data length
+        if len(data) != payload_len:
+            print(
+                f"[STORY UPLOAD] Warning: Expected {payload_len} bytes, "
+                f"got {len(data)}"
+            )
+        return data
+
+    def _receive_data_chunks(self, client_socket, total_bytes):
+        """Receive data in chunks until complete."""
+        data = b''
+        while len(data) < total_bytes:
+            remaining = total_bytes - len(data)
+            chunk_size = min(RECV_CHUNK_SIZE_BYTES, remaining)
+            chunk = client_socket.recv(chunk_size)
+            if not chunk:
+                break
+            data += chunk
+        return data
+
+    def _parse_media_payload(self, payload_data):
+        """
+        Parse JSON payload and extract media information.
+        Returns dict with media info or None if failed.
+        """
+        # Parse JSON payload
+        payload = json.loads(payload_data.decode())
+
+        # Extract fields
+        media_b64 = payload["data"]
+        media_type = payload.get("media_type", "image")
+        username = payload.get("username", "user")
+
+        # Decode base64 to binary
+        file_bytes = base64.b64decode(media_b64)
+
+        return {
+            'file_bytes': file_bytes,
+            'media_type': media_type,
+            'username': username
+        }
+
+    def _save_media_file(self, media_info):
+        """
+        Save media file to disk with unique filename.
+        Returns the full path where file was saved.
+        """
+        # Generate unique filename
+        filename = self._generate_unique_filename(
+            media_info['username'],
+            media_info['media_type']
+        )
+
+        full_path = os.path.join(STORIES_FOLDER, filename)
+
+        # Save file
+        with open(full_path, "wb") as f:
+            f.write(media_info['file_bytes'])
+
+        return full_path
+
+    def _generate_unique_filename(self, username, media_type):
+        """Generate a unique filename based
+        on username, timestamp, and type."""
+        timestamp = int(time.time())
+        ext = ".mp4" if media_type == "video" else ".jpg"
+        return f"story_{username}_{timestamp}{ext}"
+
+    def _send_success_response(self, client_socket, saved_path, file_size):
+        """Send success response to client and log the save."""
+        print(
+            f"[STORY UPLOAD] ✓ Saved story → "
+            f"{saved_path} ({file_size} bytes)"
+        )
+        try:
             client_socket.send(b"OK: story received")
+        except:
+            pass
 
-        except json.JSONDecodeError:
-            try:
-                client_socket.send(b"ERROR: Invalid JSON")
-            except:
-                pass
-        except Exception:
-            try:
-                client_socket.send(b"ERROR: Upload failed")
-            except:
-                pass
+    def _send_error_response(self, client_socket, error_message):
+        """Send error response to client."""
+        try:
+            client_socket.send(f"ERROR: {error_message}".encode())
+        except:
+            pass
 
     def stop(self):
         """Stop the server"""

@@ -3,6 +3,7 @@ Gal Haham
 Main client for Tennis Social application.
 Handles server connection and provides backend services for GUI.
 Primary entry point for the application.
+REFACTORED: Magic numbers replaced with constants, long methods split.
 """
 import socket
 import json
@@ -28,6 +29,15 @@ ATTEMPTS_LIMIT = 5
 HALF_SECOND_DELAY = 0.5
 PATH_LIST_HEAD = 0
 EXIT_CODE_ERROR = 1
+EXIT_CODE_SUCCESS = 0
+
+# User roles
+USER_ROLE_REGULAR = 0
+USER_ROLE_ADMIN = 1
+
+# Story file names
+STORY_VIDEO_FILENAME = "story.mp4"
+STORY_IMAGE_FILENAME = "story.jpg"
 
 
 class Client:
@@ -37,10 +47,19 @@ class Client:
     """
 
     def __init__(self):
+        """
+        Initialize the Tennis Social client.
+
+        Sets up network configuration, user state, and file system.
+        """
         self.host = HOST
         self.port = PORT
         self.username = None
-        self.is_admin = 0
+        self.is_admin = USER_ROLE_REGULAR
+        self._ensure_video_folder_exists()
+
+    def _ensure_video_folder_exists(self):
+        """Create video folder if it doesn't exist."""
         if not os.path.exists(VIDEO_FOLDER):
             os.makedirs(VIDEO_FOLDER)
 
@@ -48,6 +67,13 @@ class Client:
         """
         Sends a JSON request to the server using Protocol
         and returns the server's JSON response.
+
+        Args:
+            request_type: Type of request (e.g., 'LOGIN', 'ADD_STORY')
+            payload: Dictionary containing request data
+
+        Returns:
+            dict: Server response with 'status' and optional data
         """
         try:
             # Create a socket connection
@@ -70,32 +96,90 @@ class Client:
             return response
 
         except ConnectionRefusedError:
-            return {"status": "error", "message": "Connection Refused. Is server running?"}
+            return {
+                "status": "error",
+                "message": "Connection Refused. Is server running?",
+            }
         except json.JSONDecodeError:
-            return {"status": "error", "message": "Invalid server response format."}
+            return {
+                "status": "error",
+                "message": "Invalid server response format.",
+            }
         except Exception as e:
             return {"status": "error", "message": f"Network Error: {e}"}
 
-    # --- Story Post Callback (used by Story_camera.py) ---
-
     def on_story_post_callback(self, caption, media_type, media_data):
         """
-        Callback for posting a story from the camera.
+        Callback for posting a story from the camera - REFACTORED.
         Called by Story_camera.py after capturing media.
+
+        Args:
+            caption: Story caption (currently unused)
+            media_type: Type of media ('video' or 'photo')
+            media_data: Base64 encoded media data
+        """
+        # Step 1: Determine filename and save locally
+        file_name = self._get_story_filename(media_type)
+        if not self._save_story_file(file_name, media_data):
+            return
+
+        # Step 2: Register story in database
+        if not self._register_story_in_database(file_name, media_type):
+            self._cleanup_file(file_name)
+            return
+
+        # Step 3: Upload to server and verify
+        self._upload_and_verify_story(file_name)
+
+        # Step 4: Cleanup
+        self._cleanup_file(file_name)
+
+    def _get_story_filename(self, media_type):
+        """
+        Get appropriate filename based on media type.
+
+        Args:
+            media_type: 'video' or 'photo'
+
+        Returns:
+            str: Filename to use
         """
         if media_type == "video":
-            file_name = "story.mp4"
+            return STORY_VIDEO_FILENAME
         else:
-            file_name = "story.jpg"
+            return STORY_IMAGE_FILENAME
 
+    def _save_story_file(self, file_name, media_data):
+        """
+        Save base64 encoded media to file.
+
+        Args:
+            file_name: Name of file to create
+            media_data: Base64 encoded data
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
         try:
             file_bytes = base64.b64decode(media_data)
             with open(file_name, "wb") as f:
                 f.write(file_bytes)
+            return True
         except Exception as e:
             print(f"Failed to save media file: {e}")
-            return
+            return False
 
+    def _register_story_in_database(self, file_name, media_type):
+        """
+        Register story metadata in database.
+
+        Args:
+            file_name: Name of story file
+            media_type: 'video' or 'photo'
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
         db_content_type = "image" if media_type == "photo" else "video"
 
         payload = {
@@ -103,15 +187,17 @@ class Client:
             "filename": file_name,
             "content_type": db_content_type
         }
-        res = self._send_request("ADD_STORY", payload)
 
-        if res.get('status') != 'success':
-            try:
-                os.remove(file_name)
-            except:
-                pass
-            return
+        response = self._send_request("ADD_STORY", payload)
+        return response.get('status') == 'success'
 
+    def _upload_and_verify_story(self, file_name):
+        """
+        Upload story to server and verify.
+
+        Args:
+            file_name: Name of file to upload
+        """
         time.sleep(TWO_SECOND_PAUSE)
 
         try:
@@ -124,16 +210,29 @@ class Client:
         except Exception as e:
             print(f"Failed to upload media: {e}")
 
-        finally:
-            try:
-                if os.path.exists(file_name):
-                    os.remove(file_name)
-            except:
-                pass
+    def _cleanup_file(self, file_name):
+        """
+        Remove file from filesystem.
+
+        Args:
+            file_name: Name of file to remove
+        """
+        try:
+            if os.path.exists(file_name):
+                os.remove(file_name)
+        except:
+            pass
 
     def verify_story_uploaded(self, filename):
         """
-        Periodically checks if the newly uploaded story is available on the server.
+        Periodically checks if the newly uploaded story
+         is available on the server.
+
+        Args:
+            filename: Name of the uploaded file
+
+        Returns:
+            bool: True if story found, False otherwise
         """
         for i in range(ATTEMPTS_LIMIT):
             response = self._send_request('GET_STORIES', {})
@@ -148,33 +247,48 @@ class Client:
 
         return False
 
-    # --- Main Entry Point ---
-
     def run(self):
         """
-        Main entry point for the application.
+        Main entry point for the application - REFACTORED.
         Launches the GUI interface.
         """
-        import wx
-
-        # Create the wx app once
+        # Create the wx app
         app = wx.App()
 
-        # ---------------------
-        # LOGIN SCREEN
-        # ---------------------
+        # Show login screen
+        if not self._show_login_screen(app):
+            return  # User cancelled
+
+        # Show main menu
+        self._show_main_menu(app)
+
+        # Exit cleanly
+        sys.exit(EXIT_CODE_SUCCESS)
+
+    def _show_login_screen(self, app):
+        """
+        Display login/signup screen.
+
+        Args:
+            app: wx.App instance
+
+        Returns:
+            bool: True if login successful, False if cancelled
+        """
         login_frame = LoginSignupFrame(self)
         login_frame.Show()
         app.MainLoop()
 
-        # After login window closes:
-        if not getattr(login_frame, "login_successful", False):
-            # User cancelled login - just exit quietly
-            return
+        # Check if login was successful
+        return getattr(login_frame, "login_successful", False)
 
-        # ---------------------
-        # MAIN MENU GUI
-        # ---------------------
+    def _show_main_menu(self, app):
+        """
+        Display main menu after successful login.
+
+        Args:
+            app: wx.App instance
+        """
         from MainMenuFrame import MainMenuFrame
 
         main_menu = MainMenuFrame(username=self.username, client_ref=self)
@@ -182,13 +296,6 @@ class Client:
 
         # Run GUI main loop
         app.MainLoop()
-
-        # After main menu closes - exit quietly
-        # (goodbye message shown in GUI dialog)
-
-        # Force exit to close all background threads
-        import sys
-        sys.exit(0)
 
 
 if __name__ == '__main__':

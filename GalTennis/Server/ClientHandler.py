@@ -2,6 +2,7 @@
 Gal Haham
 Client Handler
 Manages individual client streaming sessions
+REFACTORED: _stream_loop split into smaller helper methods
 """
 import time
 from VideoStreamManager import VideoStreamManager
@@ -75,7 +76,7 @@ class ClientHandler:
         print(f"Streaming to {self.address}")
         print(
             f"   Video: {video_info['width']}x{video_info['height']} "
-            f"@ {video_info['fps']:.2f} FPS"
+            f"@ {video_info['fps']: .2f} FPS"
         )
         print(
             f"   Audio: {audio_info['audio_sample_rate']} Hz, "
@@ -83,47 +84,91 @@ class ClientHandler:
         )
 
     def _stream_loop(self, video_info):
-        """Main loop for streaming video and audio frames."""
-        frame_count = INITIAL_FRAME_COUNT
-        start_time = time.time()
-        frame_delay = video_info['frame_delay']
-        total_frames = video_info['total_frames']
+        """Main loop for streaming video and audio frames - REFACTORED."""
+        # Initialize streaming state
+        streaming_state = self._initialize_streaming_state(video_info)
 
+        # Main streaming loop
         while True:
-            frame_start = time.time()
+            # Process one frame
+            if not self._process_single_frame(streaming_state):
+                break  # End of stream
 
-            # Read video frame
-            ret, frame = self.video_manager.read_frame()
-            if not ret:
-                print(
-                    f"Finished streaming to {self.address} "
-                    f"({frame_count} frames)"
-                )
-                break
+            # Update frame counter
+            streaming_state['frame_count'] += FRAME_INCREMENT_STEP
 
-            # Read audio chunk
-            audio_chunk = self.audio_manager.read_audio_chunk()
+    def _initialize_streaming_state(self, video_info):
+        """Initialize all state variables needed for streaming."""
+        return {
+            'frame_count': INITIAL_FRAME_COUNT,
+            'start_time': time.time(),
+            'frame_delay': video_info['frame_delay'],
+            'total_frames': video_info['total_frames']
+        }
 
-            # Create and send packet
-            packet = {
-                'frame': frame,
-                'audio': audio_chunk,
-                'frame_number': frame_count
-            }
-            NetworkManager.send_packet(self.client_socket, packet)
+    def _process_single_frame(self, state):
+        """
+        Process and send a single frame with audio.
+        Returns True if successful, False if stream ended.
+        """
+        frame_start = time.time()
 
-            frame_count += FRAME_INCREMENT_STEP
+        # Read video frame
+        ret, frame = self._read_video_frame()
+        if not ret:
+            self._print_stream_completion(state['frame_count'])
+            return False
 
-            # Progress logging
-            VideoStreamManager.log_progress(
-                frame_count,
-                total_frames,
-                start_time,
-                self.address
-            )
+        # Read audio chunk
+        audio_chunk = self._read_audio_chunk()
 
-            # Frame rate control
-            VideoStreamManager.control_frame_rate(frame_start, frame_delay)
+        # Send packet to client
+        self._send_frame_packet(frame, audio_chunk, state['frame_count'])
+
+        # Log progress
+        self._log_streaming_progress(state)
+
+        # Control frame rate
+        self._control_frame_timing(frame_start, state['frame_delay'])
+
+        return True
+
+    def _read_video_frame(self):
+        """Read the next video frame from video manager."""
+        return self.video_manager.read_frame()
+
+    def _read_audio_chunk(self):
+        """Read the next audio chunk from audio manager."""
+        return self.audio_manager.read_audio_chunk()
+
+    def _send_frame_packet(self, frame, audio_chunk, frame_number):
+        """Create and send a packet containing frame and audio."""
+        packet = {
+            'frame': frame,
+            'audio': audio_chunk,
+            'frame_number': frame_number
+        }
+        NetworkManager.send_packet(self.client_socket, packet)
+
+    def _print_stream_completion(self, frame_count):
+        """Print completion message when stream ends."""
+        print(
+            f"Finished streaming to {self.address} "
+            f"({frame_count} frames)"
+        )
+
+    def _log_streaming_progress(self, state):
+        """Log progress periodically during streaming."""
+        VideoStreamManager.log_progress(
+            state['frame_count'],
+            state['total_frames'],
+            state['start_time'],
+            self.address
+        )
+
+    def _control_frame_timing(self, frame_start, frame_delay):
+        """Control frame rate to maintain consistent timing."""
+        VideoStreamManager.control_frame_rate(frame_start, frame_delay)
 
     def _cleanup(self):
         """Releases all resources for this client."""

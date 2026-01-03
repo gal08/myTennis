@@ -94,5 +94,5 @@ class VideoStreamManager:
             elapsed = time.time() - start_time
             print(
                 f"Client {address}: Frame {frame_count}/"
-                f"{total_frames} ({elapsed:.1f}s)"
+                f"{total_frames} ({elapsed: .1f}s)"
             )

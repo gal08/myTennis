@@ -2,6 +2,7 @@
 Gal Haham
 GUI Frame for Video & Audio Client
 Provides user interface for connecting to streaming server
+REFACTORED: Constructor split into smaller helper methods
 """
 import wx
 import cv2
@@ -69,11 +70,34 @@ class VideoAudioClientFrame(wx.Frame):
     """Graphical User Interface for Video & Audio Client"""
 
     def __init__(self):
+        """Initialize the frame with split UI creation methods"""
         super().__init__(
             None,
             title="Video & Audio Stream Client",
             size=wx.Size(WINDOW_WIDTH, WINDOW_HEIGHT)
         )
+
+        # Create main panel
+        self.panel = self._create_main_panel()
+
+        # Initialize client variable
+        self.client = None
+
+        # Build UI components
+        self._create_title()
+        self._create_server_settings()
+        self._create_status_label()
+        self._create_info_text()
+        self._create_connect_button()
+        self._create_instructions()
+        self._setup_event_bindings()
+
+        # Show frame
+        self.Centre()
+        self.Show()
+
+    def _create_main_panel(self):
+        """Create and configure the main panel with background color"""
         panel = wx.Panel(self)
         panel.SetBackgroundColour(
             wx.Colour(
@@ -82,8 +106,10 @@ class VideoAudioClientFrame(wx.Frame):
                 BACKGROUND_COLOR_BLUE
             )
         )
+        return panel
 
-        # ----- Title -----
+    def _create_title(self):
+        """Create the title text at the top of the window"""
         title_font = wx.Font(
             TITLE_FONT_SIZE,
             wx.FONTFAMILY_DEFAULT,
@@ -91,40 +117,49 @@ class VideoAudioClientFrame(wx.Frame):
             wx.FONTWEIGHT_BOLD
         )
         title = wx.StaticText(
-            panel,
+            self.panel,
             label="Video & Audio Stream Client",
             pos=wx.Point(TITLE_POSITION_X, TITLE_POSITION_Y)
         )
         title.SetFont(title_font)
 
-        # ----- Server Settings -----
+    def _create_server_settings(self):
+        """Create server IP and port input fields"""
+        self._create_ip_input()
+        self._create_port_input()
+
+    def _create_ip_input(self):
+        """Create the server IP label and input field"""
         wx.StaticText(
-            panel,
+            self.panel,
             label="Server IP:",
             pos=wx.Point(LABEL_SERVER_IP_POS_X, LABEL_SERVER_IP_POS_Y)
         )
         self.host_input = wx.TextCtrl(
-            panel,
+            self.panel,
             value=HOST_INPUT_DEFAULT_VALUE,
             pos=wx.Point(HOST_INPUT_POS_X, HOST_INPUT_POS_Y),
             size=wx.Size(HOST_INPUT_WIDTH, HOST_INPUT_HEIGHT)
         )
 
+    def _create_port_input(self):
+        """Create the port label and input field"""
         wx.StaticText(
-            panel,
+            self.panel,
             label="Port:",
             pos=wx.Point(LABEL_PORT_POS_X, LABEL_PORT_POS_Y)
         )
         self.port_input = wx.TextCtrl(
-            panel,
+            self.panel,
             value=PORT_INPUT_DEFAULT_VALUE,
             pos=wx.Point(PORT_INPUT_POS_X, PORT_INPUT_POS_Y),
             size=wx.Size(PORT_INPUT_WIDTH, PORT_INPUT_HEIGHT)
         )
 
-        # ----- Status Label -----
+    def _create_status_label(self):
+        """Create the status label that shows connection state"""
         self.status_text = wx.StaticText(
-            panel,
+            self.panel,
             label="Status: Not connected",
             pos=wx.Point(STATUS_LABEL_POS_X, STATUS_LABEL_POS_Y)
         )
@@ -134,9 +169,10 @@ class VideoAudioClientFrame(wx.Frame):
             STATUS_TEXT_COLOR_BLUE
         ))
 
-        # ----- Info Text -----
+    def _create_info_text(self):
+        """Create the information text about requirements"""
         info = wx.StaticText(
-            panel,
+            self.panel,
             label="Requires: ffmpeg (server) & pyaudio (client)",
             pos=wx.Point(INFO_LABEL_POS_X, INFO_LABEL_POS_Y)
         )
@@ -155,9 +191,10 @@ class VideoAudioClientFrame(wx.Frame):
         )
         info.SetFont(small_font)
 
-        # ----- Connect Button -----
+    def _create_connect_button(self):
+        """Create the connect button"""
         self.connect_btn = wx.Button(
-            panel,
+            self.panel,
             label="Connect & Play",
             pos=wx.Point(CONNECT_BUTTON_POS_X, CONNECT_BUTTON_POS_Y),
             size=wx.Size(CONNECT_BUTTON_WIDTH, CONNECT_BUTTON_HEIGHT)
@@ -171,9 +208,10 @@ class VideoAudioClientFrame(wx.Frame):
         )
         self.connect_btn.SetForegroundColour(wx.WHITE)
 
-        # ----- Instructions -----
+    def _create_instructions(self):
+        """Create the instructions text at the bottom"""
         instructions = wx.StaticText(
-            panel,
+            self.panel,
             label="Press Q or ESC in video window to stop",
             pos=wx.Point(INSTRUCTIONS_POS_X, INSTRUCTIONS_POS_Y)
         )
@@ -185,19 +223,28 @@ class VideoAudioClientFrame(wx.Frame):
             )
         )
 
-        # ----- Event Bindings -----
+    def _setup_event_bindings(self):
+        """Set up all event bindings"""
         self.connect_btn.Bind(wx.EVT_BUTTON, self.on_connect)
         self.Bind(wx.EVT_CLOSE, self.on_close)
-
-        self.client = None
-        self.Centre()
-        self.Show()
 
     def on_connect(self, _event):
         """Handle 'Connect & Play' button click"""
         host = self.host_input.GetValue()
         port = int(self.port_input.GetValue())
 
+        self._update_status_connecting()
+
+        self.client = VideoAudioClient(host, port)
+
+        if self.client.connect():
+            self._update_status_connected()
+            self._start_playback_thread()
+        else:
+            self._update_status_failed()
+
+    def _update_status_connecting(self):
+        """Update status to show connecting state"""
         self.status_text.SetLabel("Status: Connecting...")
         self.status_text.SetForegroundColour(
             wx.Colour(
@@ -207,29 +254,33 @@ class VideoAudioClientFrame(wx.Frame):
             )
         )
 
-        self.client = VideoAudioClient(host, port)
+    def _update_status_connected(self):
+        """Update status to show connected and playing state"""
+        self.status_text.SetLabel("Status: Connected - Playing...")
+        self.status_text.SetForegroundColour(
+            wx.Colour(
+                STATUS_CONNECTED_COLOR_RED,
+                STATUS_CONNECTED_COLOR_GREEN,
+                STATUS_CONNECTED_COLOR_BLUE
+            )
+        )
 
-        if self.client.connect():
-            self.status_text.SetLabel("Status: Connected - Playing...")
-            self.status_text.SetForegroundColour(
-                wx.Colour(
-                    STATUS_CONNECTED_COLOR_RED,
-                    STATUS_CONNECTED_COLOR_GREEN,
-                    STATUS_CONNECTED_COLOR_BLUE
-                )
+    def _update_status_failed(self):
+        """Update status to show connection failed"""
+        self.status_text.SetLabel("Status: Connection failed")
+        self.status_text.SetForegroundColour(
+            wx.Colour(
+                ERROR_COLOR_RED,
+                ERROR_COLOR_GREEN,
+                ERROR_COLOR_BLUE
             )
-            play_thread = threading.Thread(target=self.client.play_stream)
-            play_thread.daemon = True
-            play_thread.start()
-        else:
-            self.status_text.SetLabel("Status: Connection failed")
-            self.status_text.SetForegroundColour(
-                wx.Colour(
-                    ERROR_COLOR_RED,
-                    ERROR_COLOR_GREEN,
-                    ERROR_COLOR_BLUE
-                )
-            )
+        )
+
+    def _start_playback_thread(self):
+        """Start the video playback in a separate thread"""
+        play_thread = threading.Thread(target=self.client.play_stream)
+        play_thread.daemon = True
+        play_thread.start()
 
     def on_close(self, _event):
         """Handle window close event"""

@@ -2,6 +2,7 @@
 Gal Haham
 Story streaming server for images and videos.
 Sends stories with synchronized audio to connected clients over TCP.
+REFACTORED: Send methods split into smaller helper functions
 """
 import socket
 import os
@@ -48,6 +49,7 @@ class StoryPlayerServer:
     """
     Story streaming server that handles both image and video stories.
     Manages client connections and streams media with synchronized audio.
+    REFACTORED: Send operations split into helper methods.
     """
 
     def __init__(
@@ -56,14 +58,7 @@ class StoryPlayerServer:
             host=STORY_SERVER_HOST,
             port=STORY_SERVER_PORT
     ):
-        """
-        Initialize the story player server.
-
-        Args:
-            story_filename: Name of the story file to stream
-            host: Server host address
-            port: Server port number
-        """
+        """Initialize the story player server."""
         self.story_filename = story_filename
         self.host = host
         self.port = port
@@ -72,15 +67,7 @@ class StoryPlayerServer:
         self.client_socket = None
 
     def extract_audio_info(self, video_path):
-        """
-        Extract audio information from video using ffprobe.
-
-        Args:
-            video_path: Path to the video file
-
-        Returns:
-            dict: Audio information with sample_rate and channels
-        """
+        """Extract audio information from video using ffprobe."""
         try:
             cmd = [
                 'ffprobe', '-v', 'error',
@@ -117,67 +104,21 @@ class StoryPlayerServer:
             }
 
     def send_image_story(self, image_path):
-        """
-        Send a static image as a story (displayed for 5 seconds).
-
-        Args:
-            image_path: Path to the image file
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        """Send a static image as a story - REFACTORED."""
         try:
-            print(f" Reading image: {image_path}")
-            img = cv2.imread(image_path)
+            # Load and prepare image
+            img = self._load_and_resize_image(image_path)
             if img is None:
-                print(f" Error: Could not read image")
                 return False
 
-            img = cv2.resize(img, (TARGET_FRAME_WIDTH, TARGET_FRAME_HEIGHT))
+            # Prepare story info
+            story_info = self._create_image_story_info()
 
-            # Send story info
-            story_info = {
-                'type': 'IMAGE',
-                'width': TARGET_FRAME_WIDTH,
-                'height': TARGET_FRAME_HEIGHT,
-                'fps': DEFAULT_FPS,
-                'total_frames': STORY_TOTAL_FRAME_COUNT,
-                'has_audio': False
-            }
+            # Send story info to client
+            self._send_story_info(story_info)
 
-            info_data = pickle.dumps(story_info)
-            self.client_socket.sendall(struct.pack("!L", len(info_data)))
-            self.client_socket.sendall(info_data)
-            print(f"✓ Story info sent: {story_info}")
-
-            # Send frames
-            print(f"Sending {story_info['total_frames']} frames...")
-            for i in range(story_info['total_frames']):
-                _, buffer = cv2.imencode(
-                    '.jpg',
-                    img,
-                    [cv2.IMWRITE_JPEG_QUALITY, DESIRED_JPEG_QUALITY]
-                )
-
-                frame_data = buffer.tobytes()
-
-                packet = {
-                    'frame': cv2.imdecode(
-                        np.frombuffer(frame_data, np.uint8),
-                        cv2.IMREAD_COLOR
-                    ),
-                    'audio': None,
-                    'frame_number': i
-                }
-
-                packet_data = pickle.dumps(packet)
-                self.client_socket.sendall(struct.pack("!L", len(packet_data)))
-                self.client_socket.sendall(packet_data)
-
-                if i % FRAME_RATE_FPS == ZERO_REMAINDER:
-                    print(f"Sent frame {i}/{story_info['total_frames']}")
-
-                time.sleep(SECONDS_PER_FRAME_CALC / LOG_REPORTING_INTERVAL)
+            # Send all frames
+            self._send_image_frames(img, story_info['total_frames'])
 
             print(f"✓ Image story sent successfully")
             return True
@@ -188,157 +129,124 @@ class StoryPlayerServer:
             traceback.print_exc()
             return False
 
+    def _load_and_resize_image(self, image_path):
+        """Load image and resize to target dimensions."""
+        print(f" Reading image: {image_path}")
+        img = cv2.imread(image_path)
+        if img is None:
+            print(f" Error: Could not read image")
+            return None
+
+        img = cv2.resize(img, (TARGET_FRAME_WIDTH, TARGET_FRAME_HEIGHT))
+        return img
+
+    def _create_image_story_info(self):
+        """Create story info dictionary for image."""
+        return {
+            'type': 'IMAGE',
+            'width': TARGET_FRAME_WIDTH,
+            'height': TARGET_FRAME_HEIGHT,
+            'fps': DEFAULT_FPS,
+            'total_frames': STORY_TOTAL_FRAME_COUNT,
+            'has_audio': False
+        }
+
+    def _send_story_info(self, story_info):
+        """Send story information to client."""
+        info_data = pickle.dumps(story_info)
+        self.client_socket.sendall(struct.pack("!L", len(info_data)))
+        self.client_socket.sendall(info_data)
+        print(f"✓ Story info sent: {story_info}")
+
+    def _send_image_frames(self, img, total_frames):
+        """Send image frames repeatedly to simulate video."""
+        print(f"Sending {total_frames} frames...")
+
+        for i in range(total_frames):
+            # Encode frame
+            frame_packet = self._create_image_frame_packet(img, i)
+
+            # Send packet
+            self._send_packet(frame_packet)
+
+            # Log progress
+            if i % FRAME_RATE_FPS == ZERO_REMAINDER:
+                print(f"Sent frame {i}/{total_frames}")
+
+            # Frame delay
+            time.sleep(SECONDS_PER_FRAME_CALC / LOG_REPORTING_INTERVAL)
+
+    def _create_image_frame_packet(self, img, frame_number):
+        """Create a frame packet from image."""
+        _, buffer = cv2.imencode(
+            '.jpg',
+            img,
+            [cv2.IMWRITE_JPEG_QUALITY, DESIRED_JPEG_QUALITY]
+        )
+
+        frame_data = buffer.tobytes()
+
+        return {
+            'frame': cv2.imdecode(
+                np.frombuffer(frame_data, np.uint8),
+                cv2.IMREAD_COLOR
+            ),
+            'audio': None,
+            'frame_number': frame_number
+        }
+
+    def _send_packet(self, packet):
+        """Send a packet (frame + audio) to client."""
+        packet_data = pickle.dumps(packet)
+        self.client_socket.sendall(struct.pack("!L", len(packet_data)))
+        self.client_socket.sendall(packet_data)
+
     def send_video_story(self, video_path):
-        """
-        Send a video story with synchronized audio.
-
-        Args:
-            video_path: Path to the video file
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        """Send a video story with synchronized audio - REFACTORED."""
         try:
-            print(f"Opening video: {video_path}")
-            cap = cv2.VideoCapture(video_path)
-            if not cap.isOpened():
-                print(f"Error: Could not open video")
+            # Open and validate video
+            cap = self._open_video_capture(video_path)
+            if not cap:
                 return False
 
-            # Get video info
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            if fps <= MINIMUM_FPS_LIMIT or fps > MAXIMUM_FPS_LIMIT:
-                fps = DEFAULT_FPS
-
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            frame_delay = SECONDS_IN_ONE_UNIT / fps
+            # Get video properties
+            video_props = self._extract_video_properties(cap)
 
             # Get audio info
             audio_info = self.extract_audio_info(video_path)
             print(f"Audio info: {audio_info}")
 
-            # Calculate audio chunk size
-            samples_per_frame = int(audio_info['sample_rate'] / fps)
-            audio_chunk_size = (
-                samples_per_frame *
-                audio_info['channels'] *
-                BYTES_PER_SAMPLE_16_BIT
+            # Setup audio extraction
+            audio_setup = self._setup_audio_extraction(
+                video_path,
+                video_props,
+                audio_info
             )
-
-            # Start ffmpeg for audio extraction
-            audio_process = None
-            try:
-                ffmpeg_cmd = [
-                    'ffmpeg', '-i', video_path,
-                    '-vn',
-                    '-acodec', 'pcm_s16le',
-                    '-ar', str(audio_info['sample_rate']),
-                    '-ac', str(audio_info['channels']),
-                    '-f', 's16le',
-                    'pipe:1'
-                ]
-                audio_process = subprocess.Popen(
-                    ffmpeg_cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    bufsize=LARGE_IO_BUFFER_SIZE_BYTES
-                )
-                print("✓ FFmpeg audio process started")
-            except Exception as e:
-                print(f" Warning: Could not start audio extraction: {e}")
 
             # Send story info
-            story_info = {
-                'type': 'VIDEO',
-                'width': width,
-                'height': height,
-                'fps': fps,
-                'total_frames': total_frames,
-                'has_audio': audio_process is not None,
-                'audio_sample_rate': audio_info['sample_rate'],
-                'audio_channels': audio_info['channels'],
-                'samples_per_frame': samples_per_frame
-            }
-
-            info_data = pickle.dumps(story_info)
-            self.client_socket.sendall(struct.pack("!L", len(info_data)))
-            self.client_socket.sendall(info_data)
-            print(f"✓ Story info sent")
-            print(f"   Video: {width}x{height} @ {fps:.2f} FPS")
-            print(
-                f"   Audio: {audio_info['sample_rate']} Hz, "
-                f"{audio_info['channels']} ch"
+            story_info = self._create_video_story_info(
+                video_props,
+                audio_info,
+                audio_setup
             )
-            print(f"   Has Audio: {story_info['has_audio']}")
+            self._send_story_info(story_info)
+            self._print_video_info(video_props, audio_info, story_info)
 
-            # Send frames with audio
-            frame_count = INITIAL_COUNT
-            start_time = time.time()
-
-            while True:
-                frame_start = time.time()
-                ret, frame = cap.read()
-                if not ret:
-                    print(f"End of video at frame {frame_count}")
-                    break
-
-                # Resize frame
-                frame = cv2.resize(
-                    frame,
-                    (TARGET_FRAME_WIDTH, TARGET_FRAME_HEIGHT)
-                )
-
-                # Get audio chunk
-                audio_chunk = None
-                if audio_process and audio_process.stdout:
-                    try:
-                        audio_data = (
-                            audio_process.stdout.read(audio_chunk_size)
-                        )
-                        if audio_data and len(audio_data) == audio_chunk_size:
-                            audio_chunk = np.frombuffer(
-                                audio_data,
-                                dtype=np.int16
-                            )
-                    except:
-                        audio_chunk = None
-
-                # Create and send packet
-                packet = {
-                    'frame': frame,
-                    'audio': audio_chunk,
-                    'frame_number': frame_count
-                }
-
-                packet_data = pickle.dumps(packet)
-                self.client_socket.sendall(struct.pack("!L", len(packet_data)))
-                self.client_socket.sendall(packet_data)
-
-                frame_count += INCREMENT_STEP
-
-                if frame_count % TARGET_FPS == ZERO_REMAINDER:
-                    elapsed = time.time() - start_time
-                    print(
-                        f"Frame {frame_count}/{total_frames} "
-                        f"({elapsed:.1f}s)"
-                    )
-
-                # Frame rate control
-                elapsed = time.time() - frame_start
-                sleep_time = max(MINIMUM_DELAY_SECONDS, frame_delay - elapsed)
-                if sleep_time > MINIMUM_DELAY_SECONDS:
-                    time.sleep(sleep_time)
+            # Stream video frames
+            success = self._stream_video_frames(
+                cap,
+                video_props,
+                audio_setup
+            )
 
             # Cleanup
-            cap.release()
-            if audio_process:
-                audio_process.terminate()
-                audio_process.wait()
-
-            print(f"✓ Video story sent successfully ({frame_count} frames)")
-            return True
+            self._cleanup_video_resources(
+                cap,
+                audio_setup.get('audio_process')
+            )
+            if success:
+                print(f"✓ Video story sent successfully")
+            return success
 
         except Exception as e:
             print(f"Error sending video: {e}")
@@ -346,21 +254,181 @@ class StoryPlayerServer:
             traceback.print_exc()
             return False
 
-    def validate_story_file(self):
-        """
-        Validate that the story file exists and is of supported format.
+    def _open_video_capture(self, video_path):
+        """Open video file and return capture object."""
+        print(f"Opening video: {video_path}")
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            print(f"Error: Could not open video")
+            return None
+        return cap
 
-        Returns:
-            tuple: (is_valid, is_image, is_video, extension)
-        """
+    def _extract_video_properties(self, cap):
+        """Extract video properties (fps, dimensions, etc)."""
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= MINIMUM_FPS_LIMIT or fps > MAXIMUM_FPS_LIMIT:
+            fps = DEFAULT_FPS
+
+        return {
+            'fps': fps,
+            'width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            'height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            'total_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+            'frame_delay': SECONDS_IN_ONE_UNIT / fps
+        }
+
+    def _setup_audio_extraction(self, video_path, video_props, audio_info):
+        """Setup FFmpeg for audio extraction."""
+        samples_per_frame = int(audio_info['sample_rate'] / video_props['fps'])
+        audio_chunk_size = (
+            samples_per_frame *
+            audio_info['channels'] *
+            BYTES_PER_SAMPLE_16_BIT
+        )
+
+        audio_process = self._start_ffmpeg_audio_process(
+            video_path,
+            audio_info
+        )
+
+        return {
+            'samples_per_frame': samples_per_frame,
+            'audio_chunk_size': audio_chunk_size,
+            'audio_process': audio_process
+        }
+
+    def _start_ffmpeg_audio_process(self, video_path, audio_info):
+        """Start FFmpeg process for audio extraction."""
+        try:
+            ffmpeg_cmd = [
+                'ffmpeg', '-i', video_path,
+                '-vn',
+                '-acodec', 'pcm_s16le',
+                '-ar', str(audio_info['sample_rate']),
+                '-ac', str(audio_info['channels']),
+                '-f', 's16le',
+                'pipe:1'
+            ]
+            audio_process = subprocess.Popen(
+                ffmpeg_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=LARGE_IO_BUFFER_SIZE_BYTES
+            )
+            print("✓ FFmpeg audio process started")
+            return audio_process
+        except Exception as e:
+            print(f" Warning: Could not start audio extraction: {e}")
+            return None
+
+    def _create_video_story_info(self, video_props, audio_info, audio_setup):
+        """Create story info dictionary for video."""
+        return {
+            'type': 'VIDEO',
+            'width': video_props['width'],
+            'height': video_props['height'],
+            'fps': video_props['fps'],
+            'total_frames': video_props['total_frames'],
+            'has_audio': audio_setup['audio_process'] is not None,
+            'audio_sample_rate': audio_info['sample_rate'],
+            'audio_channels': audio_info['channels'],
+            'samples_per_frame': audio_setup['samples_per_frame']
+        }
+
+    def _print_video_info(self, video_props, audio_info, story_info):
+        """Print video streaming information."""
+        print(f"✓ Story info sent")
+        print(
+            f"   Video: {video_props['width']}x{video_props['height']} "
+            f"@ {video_props['fps']: .2f} FPS"
+        )
+        print(
+            f"   Audio: {audio_info['sample_rate']} Hz, "
+            f"{audio_info['channels']} ch"
+        )
+        print(f"   Has Audio: {story_info['has_audio']}")
+
+    def _stream_video_frames(self, cap, video_props, audio_setup):
+        """Stream all video frames with audio."""
+        frame_count = INITIAL_COUNT
+        start_time = time.time()
+
+        while True:
+            frame_start = time.time()
+
+            # Read video frame
+            ret, frame = cap.read()
+            if not ret:
+                print(f"End of video at frame {frame_count}")
+                break
+
+            # Resize frame
+            frame = cv2.resize(
+                frame,
+                (TARGET_FRAME_WIDTH, TARGET_FRAME_HEIGHT)
+            )
+            # Get audio chunk
+            audio_chunk = self._read_audio_chunk(audio_setup)
+
+            # Create and send packet
+            packet = {
+                'frame': frame,
+                'audio': audio_chunk,
+                'frame_number': frame_count
+            }
+            self._send_packet(packet)
+
+            frame_count += INCREMENT_STEP
+
+            # Progress logging
+            if frame_count % TARGET_FPS == ZERO_REMAINDER:
+                elapsed = time.time() - start_time
+                print(
+                    f"Frame {frame_count}/{video_props['total_frames']} "
+                    f"({elapsed: .1f}s)"
+                )
+            # Frame rate control
+            self._control_frame_rate(frame_start, video_props['frame_delay'])
+
+        return True
+
+    def _read_audio_chunk(self, audio_setup):
+        """Read audio chunk from FFmpeg process."""
+        audio_process = audio_setup.get('audio_process')
+        audio_chunk_size = audio_setup.get('audio_chunk_size')
+
+        if audio_process and audio_process.stdout:
+            try:
+                audio_data = audio_process.stdout.read(audio_chunk_size)
+                if audio_data and len(audio_data) == audio_chunk_size:
+                    return np.frombuffer(audio_data, dtype=np.int16)
+            except:
+                pass
+        return None
+
+    def _control_frame_rate(self, frame_start, frame_delay):
+        """Control frame rate timing."""
+        elapsed = time.time() - frame_start
+        sleep_time = max(MINIMUM_DELAY_SECONDS, frame_delay - elapsed)
+        if sleep_time > MINIMUM_DELAY_SECONDS:
+            time.sleep(sleep_time)
+
+    def _cleanup_video_resources(self, cap, audio_process):
+        """Cleanup video capture and audio process."""
+        cap.release()
+        if audio_process:
+            audio_process.terminate()
+            audio_process.wait()
+
+    def validate_story_file(self):
+        """Validate that the story file exists and is of supported format."""
         if not os.path.exists(self.story_path):
             print(f"Error: Story file not found")
             return False, False, False, None
 
-        ext = (
-            os.path.splitext(self.story_filename)[FILE_EXTENSION_INDEX]
-            .lower()
-        )
+        ext = os.path.splitext(self.story_filename)[
+            FILE_EXTENSION_INDEX
+        ].lower()
         is_image = ext in ['.jpg', '.jpeg', '.png', '.bmp']
         is_video = ext in ['.mp4', '.avi', '.mov', '.mkv']
 
@@ -371,12 +439,7 @@ class StoryPlayerServer:
         return True, is_image, is_video, ext
 
     def create_server_socket(self):
-        """
-        Create and configure the server socket.
-
-        Returns:
-            bool: True if successful, False otherwise
-        """
+        """Create and configure the server socket."""
         try:
             self.server_socket = socket.socket(
                 socket.AF_INET,
@@ -389,19 +452,17 @@ class StoryPlayerServer:
             )
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(SINGLE_CONNECTION_BACKLOG)
-            print(f"✓ Server listening on {self.host}:{self.port}")
+            print(
+                f"✓ Server listening on "
+                f"{self.host}: {self.port}"
+            )
             return True
         except Exception as e:
             print(f"Error creating server socket: {e}")
             return False
 
     def accept_client(self):
-        """
-        Accept a client connection with timeout.
-
-        Returns:
-            bool: True if client connected, False otherwise
-        """
+        """Accept a client connection with timeout."""
         try:
             print(f"Waiting for client...")
             self.server_socket.settimeout(SOCKET_TIMEOUT_SECONDS)
@@ -433,12 +494,7 @@ class StoryPlayerServer:
                 pass
 
     def start(self):
-        """
-        Main method to start the story streaming server.
-
-        Returns:
-            bool: True if streaming completed successfully, False otherwise
-        """
+        """Main method to start the story streaming server."""
         print(f"Starting story server")
         print(f"Story: {self.story_filename}")
         print(f"Path: {self.story_path}")
@@ -484,12 +540,7 @@ class StoryPlayerServer:
 
 
 def run_story_player_server(story_filename):
-    """
-    Convenience function to create and start a story player server.
-
-    Args:
-        story_filename: Name of the story file to stream
-    """
+    """Convenience function to create and start a story player server."""
     server = StoryPlayerServer(story_filename)
     server.start()
 

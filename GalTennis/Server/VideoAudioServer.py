@@ -71,8 +71,9 @@ class VideoAudioServer:
         try:
             # Set timeout for accept
             if self.network_manager.server_socket:
-                self.network_manager.server_socket.settimeout(ACCEPT_TIMEOUT_SECONDS)
-
+                self.network_manager.server_socket.settimeout(
+                    ACCEPT_TIMEOUT_SECONDS
+                )
             client_socket, address = (
                 self.network_manager.accept_connection()
             )
@@ -82,7 +83,11 @@ class VideoAudioServer:
                 self.client_connected = True
 
                 # Handle this client (blocking until done)
-                handler = ClientHandler(self.video_path, client_socket, address)
+                handler = ClientHandler(
+                    self.video_path,
+                    client_socket,
+                    address
+                )
                 handler.handle_streaming()
 
                 print(f"Finished streaming to {address}")

@@ -27,6 +27,5 @@ def run_video_player_client():
         # Don't call MainLoop again - it's already running
 
 
-
 if __name__ == '__main__':
     run_video_player_client()

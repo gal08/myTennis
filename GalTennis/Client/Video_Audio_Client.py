@@ -46,7 +46,7 @@ class VideoAudioClient:
         """Creates the TCP socket and attempts to connect to the server."""
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((self.host, self.port))
-        print(f"Connected to server {self.host}:{self.port}")
+        print(f"Connected to server {self.host}: {self.port}")
         return True
 
     def _receive_stream_info(self):
@@ -67,7 +67,7 @@ class VideoAudioClient:
             f"   Video: {self.stream_info['width']}x"
             f"{self.stream_info['height']}"
         )
-        print(f"   FPS: {self.stream_info['fps']:.2f}")
+        print(f"   FPS: {self.stream_info['fps']: .2f}")
         print(f"   Frames: {self.stream_info['total_frames']}")
         print(
             f"   Audio: {self.stream_info['audio_sample_rate']} Hz, "
