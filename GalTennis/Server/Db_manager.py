@@ -15,6 +15,7 @@ DB_TIMEOUT_SECONDS = 10
 DEFAULT_IS_ADMIN = 0
 DEFAULT_CONTENT_TYPE = 'text'
 DEFAULT_LIKES_COUNT = 0
+NO_ROWS_DELETED = 0
 
 TABLE_USERS = 'users'
 TABLE_VIDEOS = 'videos'
@@ -676,7 +677,7 @@ class DBManager:
                 return cursor.rowcount
         except Exception as e:
             print(f"Error deleting old stories: {e}")
-            return 0
+            return NO_ROWS_DELETED
 
     def table_exists(self, table_name: str) -> bool:
         """

@@ -11,10 +11,9 @@ import pickle
 import struct
 import pyaudio
 import numpy as np
-from Read_server_ip import readServerIp
 
 
-STORY_SERVER_HOST = readServerIp()
+STORY_SERVER_HOST = "127.0.0.1"
 STORY_SERVER_PORT = 6001
 
 FRAME_INCREMENT = 1

@@ -120,7 +120,7 @@ class StoryPlayerServer:
             # Send all frames
             self._send_image_frames(img, story_info['total_frames'])
 
-            print(f"✓ Image story sent successfully")
+            print(f"Image story sent successfully")
             return True
 
         except Exception as e:
@@ -245,7 +245,7 @@ class StoryPlayerServer:
                 audio_setup.get('audio_process')
             )
             if success:
-                print(f"✓ Video story sent successfully")
+                print(f"Video story sent successfully")
             return success
 
         except Exception as e:
@@ -315,7 +315,7 @@ class StoryPlayerServer:
                 stderr=subprocess.DEVNULL,
                 bufsize=LARGE_IO_BUFFER_SIZE_BYTES
             )
-            print("✓ FFmpeg audio process started")
+            print("FFmpeg audio process started")
             return audio_process
         except Exception as e:
             print(f" Warning: Could not start audio extraction: {e}")

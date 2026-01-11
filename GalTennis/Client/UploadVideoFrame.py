@@ -33,7 +33,7 @@ class UploadVideoFrame(wx.Frame):
         Args:
             client: Client instance for server communication
         """
-        super().__init__(parent=None, title="📤 Upload Video", size=(550, 450))
+        super().__init__(parent=None, title="Upload Video", size=(550, 450))
 
         self.client = client
         self.selected_file_path = None
@@ -201,7 +201,7 @@ class UploadVideoFrame(wx.Frame):
         sizer.Add(btn_upload, 0, wx.ALIGN_CENTER | wx.ALL, 15)
 
         # Cancel button
-        btn_cancel = wx.Button(panel, label="✖️ Cancel", size=(250, 35))
+        btn_cancel = wx.Button(panel, label="Cancel", size=(250, 35))
         btn_cancel.SetBackgroundColour(wx.Colour(108, 117, 125))
         btn_cancel.SetForegroundColour(wx.WHITE)
         btn_cancel.Bind(wx.EVT_BUTTON, lambda e: self.Close())

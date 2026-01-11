@@ -34,7 +34,7 @@ class VideoInteractionFrame(wx.Frame):
         """
         super().__init__(
             parent=None,
-            title=f"🎾 {video_data['title']}",
+            title=f"{video_data['title']}",
             size=(500, 600)
         )
 
@@ -124,7 +124,7 @@ class VideoInteractionFrame(wx.Frame):
         stats_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         # Like icon
-        self.like_icon = wx.StaticText(stats_panel, label="❤️")
+        self.like_icon = wx.StaticText(stats_panel, label="")
         like_font = wx.Font(
             24,
             wx.FONTFAMILY_DEFAULT,
@@ -199,7 +199,7 @@ class VideoInteractionFrame(wx.Frame):
 
     def _create_like_button(self, parent, font):
         """Create like/unlike button."""
-        btn = wx.Button(parent, label="❤️  Like", size=(300, 45))
+        btn = wx.Button(parent, label="Like", size=(300, 45))
         btn.SetBackgroundColour(wx.Colour(255, 255, 255))
         btn.SetForegroundColour(wx.Colour(220, 53, 69))
         btn.SetFont(font)
@@ -285,11 +285,11 @@ class VideoInteractionFrame(wx.Frame):
 
         # Update button appearance
         if self.is_liked:
-            self.like_btn.SetLabel("💔  Unlike")
+            self.like_btn.SetLabel("Unlike")
             self.like_btn.SetBackgroundColour(wx.Colour(220, 53, 69))
             self.like_btn.SetForegroundColour(wx.WHITE)
         else:
-            self.like_btn.SetLabel("❤️  Like")
+            self.like_btn.SetLabel("Like")
             self.like_btn.SetBackgroundColour(wx.Colour(255, 255, 255))
             self.like_btn.SetForegroundColour(wx.Colour(220, 53, 69))
 
@@ -388,7 +388,7 @@ class VideoInteractionFrame(wx.Frame):
             self.update_like_display()
 
             # Show feedback
-            msg = "❤️ Liked!" if self.is_liked else "💔 Unliked"
+            msg = "Liked!" if self.is_liked else "Unliked"
             wx.MessageBox(msg, "Success", wx.OK | wx.ICON_INFORMATION)
         else:
             wx.MessageBox(

@@ -10,9 +10,8 @@ import struct
 import threading
 import pyaudio
 import numpy as np
-from Read_server_ip import readServerIp
 
-DEFAULT_CLIENT_HOST = readServerIp()
+DEFAULT_CLIENT_HOST = "127.0.0.1"
 DEFAULT_CLIENT_PORT = 9999
 NETWORK_HEADER_LENGTH_BYTES = 4
 FIRST_TUPLE_INDEX = 0

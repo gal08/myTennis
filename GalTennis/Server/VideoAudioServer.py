@@ -9,7 +9,7 @@ from ClientHandler import ClientHandler
 
 DEFAULT_HOST = '0.0.0.0'
 DEFAULT_PORT = 9999
-MAX_PENDING_CONNECTIONS = 1  # Only one client at a time
+MAX_PENDING_CONNECTIONS = 1
 ACCEPT_TIMEOUT_SECONDS = 30
 
 

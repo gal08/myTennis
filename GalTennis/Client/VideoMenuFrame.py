@@ -29,7 +29,7 @@ class VideoMenuFrame(wx.Frame):
             client: Client instance for server communication
             parent_menu: Reference to MainMenuFrame (optional)
         """
-        super().__init__(parent=None, title="🎬 Videos Menu", size=(400, 300))
+        super().__init__(parent=None, title="Videos Menu", size=(400, 300))
 
         self.client = client
         self.parent_menu = parent_menu
@@ -99,7 +99,7 @@ class VideoMenuFrame(wx.Frame):
         # Back button
         back_btn = wx.Button(
             panel,
-            label="⬅️ Back to Main Menu",
+            label="Back to Main Menu",
             size=(250, 40)
         )
         back_btn.Bind(wx.EVT_BUTTON, self.on_back)

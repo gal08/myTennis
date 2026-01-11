@@ -110,7 +110,7 @@ class LoginSignupFrame(wx.Frame):
             wx.FONTSTYLE_NORMAL,
             wx.FONTWEIGHT_BOLD
         )
-        title = wx.StaticText(panel, label="🎾 Tennis Social")
+        title = wx.StaticText(panel, label="Tennis Social")
         title.SetFont(title_font)
         title.SetForegroundColour(COLOR_TITLE)
         sizer.Add(title, 0, wx.ALL | wx.CENTER, SPACING_TITLE_ALL)
@@ -396,7 +396,7 @@ class LoginSignupFrame(wx.Frame):
         self._fetch_and_set_admin_status(username)
 
         # Update UI
-        self.login_status.SetLabel("✓ Login successful!")
+        self.login_status.SetLabel("Login successful!")
         self.login_status.SetForegroundColour(COLOR_SUCCESS)
         self.login_successful = True
 
@@ -425,7 +425,7 @@ class LoginSignupFrame(wx.Frame):
             response: Server response dict
         """
         error_message = response.get('message', 'Login failed')
-        self.login_status.SetLabel(f"✗ {error_message}")
+        self.login_status.SetLabel(f"{error_message}")
         self.login_status.SetForegroundColour(COLOR_ERROR)
 
     def on_signup(self, event):
@@ -539,7 +539,7 @@ class LoginSignupFrame(wx.Frame):
 
     def _handle_signup_success(self):
         """Handle successful signup - update UI and clear fields."""
-        self.signup_status.SetLabel("✓ Account created! Please login.")
+        self.signup_status.SetLabel("Account created! Please login.")
         self.signup_status.SetForegroundColour(COLOR_SUCCESS)
 
         # Clear all fields
@@ -553,7 +553,7 @@ class LoginSignupFrame(wx.Frame):
             response: Server response dict
         """
         error_message = response.get('message', 'Signup failed')
-        self.signup_status.SetLabel(f"✗ {error_message}")
+        self.signup_status.SetLabel(f"{error_message}")
         self.signup_status.SetForegroundColour(COLOR_ERROR)
 
     def _clear_signup_fields(self):

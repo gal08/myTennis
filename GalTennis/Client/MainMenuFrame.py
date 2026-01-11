@@ -13,7 +13,7 @@ from StoriesMenuFrame import StoriesMenuFrame
 # Window Configuration
 WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 300
-WINDOW_TITLE = "🎾 Main Menu"
+WINDOW_TITLE = "Main Menu"
 
 # Dialog Configuration
 DIALOG_WIDTH = 450
@@ -287,7 +287,7 @@ class MainMenuFrame(wx.Frame):
         top_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Tennis icon
-        icon_text = wx.StaticText(top_panel, label="🎾")
+        icon_text = wx.StaticText(top_panel, label="")
         icon_font = wx.Font(
             FONT_SIZE_ICON,
             wx.FONTFAMILY_DEFAULT,

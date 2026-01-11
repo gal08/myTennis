@@ -11,7 +11,7 @@ from Videogridpanel import VideoGridPanel
 # Window Configuration
 WINDOW_WIDTH = 800
 WINDOW_HEIGHT = 600
-WINDOW_TITLE = "🎬 All Videos"
+WINDOW_TITLE = "All Videos"
 
 
 class AllVideosFrame(wx.Frame):

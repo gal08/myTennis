@@ -11,11 +11,10 @@ import json
 import struct
 import os
 from pathlib import Path
-from Read_server_ip import readServerIp
 
 
 # Network Configuration
-HOST = readServerIp()
+HOST = "127.0.0.1"
 PORT = 3333
 MSG_LEN = 1024
 

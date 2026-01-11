@@ -11,12 +11,35 @@ import wx
 WINDOW_WIDTH = 600
 WINDOW_HEIGHT = 500
 
+# Colors - RGB Values
+COLOR_BG_R = 245
+COLOR_BG_G = 245
+COLOR_BG_B = 245
+COLOR_HEADER_R = 0
+COLOR_HEADER_G = 123
+COLOR_HEADER_B = 255
+COLOR_TEXT_LIGHT_R = 230
+COLOR_TEXT_LIGHT_G = 230
+COLOR_TEXT_LIGHT_B = 230
+COLOR_BUTTON_CLOSE_R = 108
+COLOR_BUTTON_CLOSE_G = 117
+COLOR_BUTTON_CLOSE_B = 125
+
 # Colors
-COLOR_BACKGROUND = wx.Colour(245, 245, 245)
-COLOR_HEADER = wx.Colour(0, 123, 255)
+COLOR_BACKGROUND = wx.Colour(COLOR_BG_R, COLOR_BG_G, COLOR_BG_B)
+COLOR_HEADER = wx.Colour(COLOR_HEADER_R, COLOR_HEADER_G, COLOR_HEADER_B)
 COLOR_WHITE = wx.WHITE
-COLOR_TEXT_LIGHT = wx.Colour(230, 230, 230)
-COLOR_BUTTON_CLOSE = wx.Colour(108, 117, 125)
+COLOR_TEXT_LIGHT = wx.Colour(
+    COLOR_TEXT_LIGHT_R,
+    COLOR_TEXT_LIGHT_G,
+    COLOR_TEXT_LIGHT_B,
+)
+COLOR_BUTTON_CLOSE = wx.Colour(
+    COLOR_BUTTON_CLOSE_R,
+    COLOR_BUTTON_CLOSE_G,
+    COLOR_BUTTON_CLOSE_B,
+)
+
 
 # Fonts
 FONT_SIZE_TITLE = 16
@@ -42,6 +65,28 @@ ACTION_BUTTON_HEIGHT = 35
 # Comment Display
 SEPARATOR_LENGTH = 50
 COMMENT_START_INDEX = 1
+
+# Sizer Flags
+SIZER_FLAG_PROPORTION_NONE = 0
+SIZER_FLAG_PROPORTION_EXPAND = 1
+SIZER_FLAG_EXPAND = wx.EXPAND
+SIZER_FLAG_DYNAMIC_WIDTH = -1
+
+# Messages
+MSG_NO_COMMENTS = "No comments yet.\nBe the first to share your thoughts!"
+MSG_ERROR_PREFIX = "Error: "
+MSG_EMPTY_COMMENT_WARNING = "Please enter a comment!"
+MSG_COMMENT_SUCCESS = "Comment posted!"
+MSG_COMMENT_ERROR_PREFIX = "Failed to post comment: "
+
+# Dialog Titles
+DIALOG_TITLE_WARNING = "Warning"
+DIALOG_TITLE_SUCCESS = "Success"
+DIALOG_TITLE_ERROR = "Error"
+
+# Default Values
+DEFAULT_ERROR_MESSAGE = "Unknown error"
+DEFAULT_LOAD_ERROR_MESSAGE = "Unable to load comments"
 
 
 class CommentsFrame(wx.Frame):
@@ -69,7 +114,7 @@ class CommentsFrame(wx.Frame):
         """
         super().__init__(
             parent=None,
-            title=f" Comments - {video_data['title']}",
+            title=f"Comments - {video_data['title']}",
             size=(WINDOW_WIDTH, WINDOW_HEIGHT)
         )
 
@@ -106,7 +151,7 @@ class CommentsFrame(wx.Frame):
         header_sizer = wx.BoxSizer(wx.VERTICAL)
 
         # Title
-        title = wx.StaticText(header_panel, label=" Comments")
+        title = wx.StaticText(header_panel, label="Comments")
         title.SetForegroundColour(COLOR_WHITE)
         title_font = wx.Font(
             FONT_SIZE_TITLE,
@@ -117,7 +162,7 @@ class CommentsFrame(wx.Frame):
         title.SetFont(title_font)
         header_sizer.Add(
             title,
-            0,
+            SIZER_FLAG_PROPORTION_NONE,
             wx.ALL | wx.ALIGN_CENTER,
             SPACING_HEADER_ALL,
         )
@@ -126,19 +171,23 @@ class CommentsFrame(wx.Frame):
         video_name.SetForegroundColour(COLOR_TEXT_LIGHT)
         header_sizer.Add(
             video_name,
-            0,
+            SIZER_FLAG_PROPORTION_NONE,
             wx.BOTTOM | wx.ALIGN_CENTER,
             SPACING_HEADER_BOTTOM,
         )
         header_panel.SetSizer(header_sizer)
-        main_sizer.Add(header_panel, 0, wx.EXPAND)
+        main_sizer.Add(
+            header_panel,
+            SIZER_FLAG_PROPORTION_NONE,
+            SIZER_FLAG_EXPAND,
+        )
 
     def _add_comments_display(self, main_panel, main_sizer):
         """Add comments display area."""
         self.comments_display = wx.TextCtrl(
             main_panel,
             style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_WORDWRAP,
-            size=(-1, COMMENTS_DISPLAY_HEIGHT)
+            size=(SIZER_FLAG_DYNAMIC_WIDTH, COMMENTS_DISPLAY_HEIGHT)
         )
         self.comments_display.SetBackgroundColour(COLOR_WHITE)
         font = wx.Font(
@@ -150,8 +199,8 @@ class CommentsFrame(wx.Frame):
         self.comments_display.SetFont(font)
         main_sizer.Add(
             self.comments_display,
-            1,
-            wx.EXPAND | wx.ALL,
+            SIZER_FLAG_PROPORTION_EXPAND,
+            SIZER_FLAG_EXPAND | wx.ALL,
             SPACING_DISPLAY,
         )
 
@@ -165,7 +214,7 @@ class CommentsFrame(wx.Frame):
         add_label = wx.StaticText(add_comment_panel, label="Add comment:")
         add_sizer.Add(
             add_label,
-            0,
+            SIZER_FLAG_PROPORTION_NONE,
             wx.ALIGN_CENTER_VERTICAL | wx.RIGHT,
             SPACING_INPUT_RIGHT,
         )
@@ -178,26 +227,26 @@ class CommentsFrame(wx.Frame):
         self.comment_input.Bind(wx.EVT_TEXT_ENTER, self.on_add_comment)
         add_sizer.Add(
             self.comment_input,
-            1,
-            wx.EXPAND | wx.RIGHT,
+            SIZER_FLAG_PROPORTION_EXPAND,
+            SIZER_FLAG_EXPAND | wx.RIGHT,
             SPACING_INPUT_RIGHT,
         )
         # Post button
         add_btn = wx.Button(
             add_comment_panel,
-            label=" Post",
+            label="Post",
             size=(POST_BUTTON_WIDTH, POST_BUTTON_HEIGHT)
         )
         add_btn.SetBackgroundColour(COLOR_HEADER)
         add_btn.SetForegroundColour(COLOR_WHITE)
         add_btn.Bind(wx.EVT_BUTTON, self.on_add_comment)
-        add_sizer.Add(add_btn, 0)
+        add_sizer.Add(add_btn, SIZER_FLAG_PROPORTION_NONE)
 
         add_comment_panel.SetSizer(add_sizer)
         main_sizer.Add(
             add_comment_panel,
-            0,
-            wx.EXPAND | wx.ALL,
+            SIZER_FLAG_PROPORTION_NONE,
+            SIZER_FLAG_EXPAND | wx.ALL,
             SPACING_DISPLAY,
         )
 
@@ -208,26 +257,30 @@ class CommentsFrame(wx.Frame):
         # Refresh button
         refresh_btn = wx.Button(
             main_panel,
-            label=" Refresh",
+            label="Refresh",
             size=(ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
         )
         refresh_btn.Bind(wx.EVT_BUTTON, lambda e: self.load_comments())
-        button_sizer.Add(refresh_btn, 0, wx.RIGHT, SPACING_BUTTON_RIGHT)
-
+        button_sizer.Add(
+            refresh_btn,
+            SIZER_FLAG_PROPORTION_NONE,
+            wx.RIGHT,
+            SPACING_BUTTON_RIGHT,
+        )
         # Close button
         close_btn = wx.Button(
             main_panel,
-            label="✖️ Close",
+            label="Close",
             size=(ACTION_BUTTON_WIDTH, ACTION_BUTTON_HEIGHT)
         )
         close_btn.SetBackgroundColour(COLOR_BUTTON_CLOSE)
         close_btn.SetForegroundColour(COLOR_WHITE)
         close_btn.Bind(wx.EVT_BUTTON, lambda e: self.Close())
-        button_sizer.Add(close_btn, 0)
+        button_sizer.Add(close_btn, SIZER_FLAG_PROPORTION_NONE)
 
         main_sizer.Add(
             button_sizer,
-            0,
+            SIZER_FLAG_PROPORTION_NONE,
             wx.ALIGN_CENTER | wx.BOTTOM,
             SPACING_BUTTON_BOTTOM,
         )
@@ -267,13 +320,11 @@ class CommentsFrame(wx.Frame):
             if comments:
                 self._display_comments(comments)
             else:
-                self.comments_display.SetValue(
-                    "No comments yet.\nBe the first to share your thoughts!"
-                )
+                self.comments_display.SetValue(MSG_NO_COMMENTS)
         else:
-            error_msg = response.get('message', 'Unable to load comments')
+            error_msg = response.get('message', DEFAULT_LOAD_ERROR_MESSAGE)
             print(f"[DEBUG] Error from server: {error_msg}")
-            self.comments_display.SetValue(f"Error: {error_msg}")
+            self.comments_display.SetValue(f"{MSG_ERROR_PREFIX}{error_msg}")
 
     def _handle_comments_load_error(self, exception):
         """
@@ -300,8 +351,8 @@ class CommentsFrame(wx.Frame):
         for i, comment in enumerate(comments, COMMENT_START_INDEX):
             display_text += f"{'=' * SEPARATOR_LENGTH}\n"
             display_text += f"{comment['username']}\n"
-            display_text += f" {comment['timestamp']}\n"
-            display_text += f" {comment['content']}\n"
+            display_text += f"{comment['timestamp']}\n"
+            display_text += f"{comment['content']}\n"
 
         display_text += f"{'=' * SEPARATOR_LENGTH}\n"
         display_text += f"\nTotal: {len(comments)} comment(s)"
@@ -319,8 +370,8 @@ class CommentsFrame(wx.Frame):
 
         if not comment_text:
             wx.MessageBox(
-                "Please enter a comment!",
-                "Warning",
+                MSG_EMPTY_COMMENT_WARNING,
+                DIALOG_TITLE_WARNING,
                 wx.OK | wx.ICON_WARNING
             )
             return
@@ -346,8 +397,8 @@ class CommentsFrame(wx.Frame):
     def _handle_comment_added(self):
         """Handle successful comment addition."""
         wx.MessageBox(
-            "Comment posted!",
-            "Success",
+            MSG_COMMENT_SUCCESS,
+            DIALOG_TITLE_SUCCESS,
             wx.OK | wx.ICON_INFORMATION
         )
         self.comment_input.Clear()
@@ -364,11 +415,11 @@ class CommentsFrame(wx.Frame):
         Args:
             response: Server response dict
         """
-        error_msg = response.get('message', 'Unknown error')
+        error_msg = response.get('message', DEFAULT_ERROR_MESSAGE)
         print(f"[DEBUG] Failed to add comment: {error_msg}")
         wx.MessageBox(
-            f"Failed to post comment: {error_msg}",
-            "Error",
+            f"{MSG_COMMENT_ERROR_PREFIX}{error_msg}",
+            DIALOG_TITLE_ERROR,
             wx.OK | wx.ICON_ERROR
         )
 

@@ -4,6 +4,7 @@ Main Tennis Social server application.
 Routes client requests, manages handlers, and coordinates
 video/story streaming servers.
 REFACTORED: Constants extracted, methods split, brief docs.
+ENHANCED: Auto-starts thumbnail servers on startup!
 """
 import socket
 import json
@@ -44,6 +45,7 @@ STORY_FOLDER = "stories"
 DB_FILE = 'users.db'
 
 PREVIEW_LENGTH = 200
+HALF_SECOND = 0.5
 SEPARATOR_LENGTH = 50
 SEPARATOR_CHAR = "="
 
@@ -114,6 +116,8 @@ class Server:
         self.story_server_thread = None
         self.story_upload_server_thread = None
         self.story_upload_server_running = False
+        self.video_thumbnail_server_running = False
+        self.story_thumbnail_server_running = False
 
         # Initialize handlers
         self.auth_handler = Authentication()
@@ -131,7 +135,11 @@ class Server:
         """Start the main TCP server."""
         self._create_server_socket()
         self._print_startup_banner()
+
+        # Start auxiliary servers
         self.start_story_upload_server()
+        self.start_video_thumbnail_server()
+        self.start_story_thumbnail_server()
 
         try:
             self._run_server_loop()
@@ -157,7 +165,7 @@ class Server:
         """Print server startup information."""
         separator = SEPARATOR_CHAR * SEPARATOR_LENGTH
         print(separator)
-        print("🎾 Tennis Social Server")
+        print("Tennis Social Server")
         print(separator)
         print(f"Main Server: {self.host}: {self.port}")
         print(f"Story Upload: {self.host}: {STORY_UPLOAD_PORT}")
@@ -188,6 +196,7 @@ class Server:
         if not self.story_upload_server_running:
             def run_upload_server():
                 try:
+                    print("Starting Story Upload Server (port 3333)...")
                     story_saver_server.run()
                 except Exception as e:
                     print(f"[ERROR] Story upload server: {e}")
@@ -198,6 +207,50 @@ class Server:
             )
             self.story_upload_server_thread.start()
             self.story_upload_server_running = True
+            time.sleep(0.5)
+
+    def start_video_thumbnail_server(self):
+        """Start video thumbnail server (port 2223) automatically."""
+        if not self.video_thumbnail_server_running:
+            def run_video_thumb_server():
+                try:
+                    print("Starting Video Thumbnail Server (port 2223)...")
+                    if run_videos_display_server:
+                        run_videos_display_server()
+                    else:
+                        print("[WARN] Video thumbnail server not available")
+                except Exception as e:
+                    print(f"[ERROR] Video thumbnail server: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            thread = threading.Thread(
+                target=run_video_thumb_server,
+                daemon=True
+            )
+            thread.start()
+            self.video_thumbnail_server_running = True
+            time.sleep(HALF_SECOND)  # Give it time to start
+
+    def start_story_thumbnail_server(self):
+        """Start story thumbnail server (port 2222) automatically."""
+        if not self.story_thumbnail_server_running:
+            def run_story_thumb_server():
+                try:
+                    print("Starting Story Thumbnail Server (port 2222)...")
+                    run_stories_display_server()
+                except Exception as e:
+                    print(f"[ERROR] Story thumbnail server: {e}")
+                    import traceback
+                    traceback.print_exc()
+
+            thread = threading.Thread(
+                target=run_story_thumb_server,
+                daemon=True
+            )
+            thread.start()
+            self.story_thumbnail_server_running = True
+            time.sleep(0.5)  # Give it time to start
 
     def handle_play_video(self, payload: dict) -> dict:
         """
@@ -315,37 +368,14 @@ class Server:
             return self._create_error_response(str(e))
 
     def get_stories_display_data(self) -> dict:
-        """Start stories display server."""
-        try:
-            thread = threading.Thread(
-                target=run_stories_display_server,
-                daemon=True
-            )
-            thread.start()
-
-            return self._create_success_response(MESSAGE_STORIES_DISPLAYED)
-
-        except Exception as e:
-            return self._create_error_response(str(e))
+        """Return success - stories server already running."""
+        # Server already started at startup, just return success
+        return self._create_success_response(MESSAGE_STORIES_DISPLAYED)
 
     def get_videos_display_data(self) -> dict:
-        """Start video grid display server."""
-        try:
-            if run_videos_display_server is None:
-                return self._create_error_response(
-                    MESSAGE_VIDEO_DISPLAY_UNAVAILABLE
-                )
-
-            thread = threading.Thread(
-                target=run_videos_display_server,
-                daemon=True
-            )
-            thread.start()
-
-            return self._create_success_response(MESSAGE_VIDEOS_DISPLAYED)
-
-        except Exception as e:
-            return self._create_error_response(str(e))
+        """Return success - video server already running."""
+        # Server already started at startup, just return success
+        return self._create_success_response(MESSAGE_VIDEOS_DISPLAYED)
 
     def handle_add_story(self, payload: dict) -> dict:
         """

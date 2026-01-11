@@ -13,7 +13,7 @@ from Story_camera import StoryCameraFrame
 # Window Configuration
 WINDOW_WIDTH = 400
 WINDOW_HEIGHT = 350
-WINDOW_TITLE = "📸 Stories Menu"
+WINDOW_TITLE = "Stories Menu"
 
 # Colors
 COLOR_BACKGROUND = wx.Colour(245, 245, 245)
@@ -94,7 +94,7 @@ class StoriesMenuFrame(wx.Frame):
             vbox: Vertical sizer
         """
         # Title
-        title = wx.StaticText(panel, label="📸 Stories")
+        title = wx.StaticText(panel, label="Stories")
         title.SetFont(
             wx.Font(
                 FONT_SIZE_TITLE,
@@ -129,7 +129,7 @@ class StoriesMenuFrame(wx.Frame):
         # Post new story button
         btn_post = wx.Button(
             panel,
-            label="📷 Post New Story (Camera)",
+            label="Post New Story (Camera)",
             size=(BUTTON_WIDTH, BUTTON_HEIGHT)
         )
         btn_post.Bind(wx.EVT_BUTTON, self.on_post_story)
@@ -141,7 +141,7 @@ class StoriesMenuFrame(wx.Frame):
         # View all stories button
         btn_view_all = wx.Button(
             panel,
-            label="🎬 View All Stories",
+            label="View All Stories",
             size=(BUTTON_WIDTH, BUTTON_HEIGHT)
         )
         btn_view_all.Bind(wx.EVT_BUTTON, self.on_view_all_stories)

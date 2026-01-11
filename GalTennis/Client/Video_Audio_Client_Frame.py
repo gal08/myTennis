@@ -7,7 +7,6 @@ REFACTORED: Constructor split into smaller helper methods
 import wx
 import cv2
 import threading
-from Read_server_ip import readServerIp
 from Video_Audio_Client import VideoAudioClient
 
 WINDOW_WIDTH = 500
@@ -20,7 +19,7 @@ TITLE_POSITION_X = 20
 TITLE_POSITION_Y = 15
 LABEL_SERVER_IP_POS_X = 20
 LABEL_SERVER_IP_POS_Y = 60
-HOST_INPUT_DEFAULT_VALUE = readServerIp()
+HOST_INPUT_DEFAULT_VALUE = "127.0.0.1"
 HOST_INPUT_POS_X = 120
 HOST_INPUT_POS_Y = 57
 HOST_INPUT_WIDTH = 200

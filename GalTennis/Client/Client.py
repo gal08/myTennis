@@ -17,11 +17,10 @@ import Show_all_stories_in_wx
 from Protocol import Protocol
 from story_player_client import run_story_player_client
 from LoginSignupFrame import LoginSignupFrame
-from Read_server_ip import readServerIp
 
 
 # --- Configuration ---
-HOST = readServerIp()
+HOST = "127.0.0.1"
 PORT = 5000
 VIDEO_FOLDER = "videos"
 TWO_SECOND_PAUSE = 2
@@ -284,15 +283,15 @@ class Client:
 
     def _show_main_menu(self, app):
         """
-        Display main menu after successful login.
+        Display unified feed after successful login.
 
         Args:
             app: wx.App instance
         """
-        from MainMenuFrame import MainMenuFrame
+        from Unifiedfeedframe import UnifiedFeedFrame
 
-        main_menu = MainMenuFrame(username=self.username, client_ref=self)
-        main_menu.Show()
+        unified_feed = UnifiedFeedFrame(client=self, username=self.username)
+        unified_feed.Show()
 
         # Run GUI main loop
         app.MainLoop()

@@ -27,7 +27,6 @@ GRID_COLUMNS = 3
 GRID_GAP = 10
 
 # Spacing
-SPACING_BUTTON = 10
 SPACING_SCROLL = 10
 SPACING_THUMBNAIL = 5
 SPACING_METADATA = 2
@@ -74,30 +73,18 @@ class VideoGridPanel(wx.Panel):
 
         self._init_ui()
 
+        # AUTO-LOAD videos immediately when panel opens
+        wx.CallAfter(self.on_load_media, None)
+
     def _init_ui(self):
         """Initialize the user interface."""
         main_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        # Load button
-        btn_load = self._create_load_button()
-        main_sizer.Add(btn_load, 0, wx.ALL | wx.CENTER, SPACING_BUTTON)
 
         # Scrollable grid
         self.scroll = self._create_scroll_window()
         main_sizer.Add(self.scroll, 1, wx.EXPAND | wx.ALL, SPACING_SCROLL)
 
         self.SetSizer(main_sizer)
-
-    def _create_load_button(self):
-        """
-        Create the load videos button.
-
-        Returns:
-            wx.Button: Load button
-        """
-        btn = wx.Button(self, label="Load All Videos from Server")
-        btn.Bind(wx.EVT_BUTTON, self.on_load_media)
-        return btn
 
     def _create_scroll_window(self):
         """
@@ -285,8 +272,8 @@ class VideoGridPanel(wx.Panel):
         Returns:
             wx.StaticText: Title label
         """
-        video_icon = "🎬"
-        label_text = f"{video_icon} {media_item['name']}"
+        # Just show the filename without emoji (encoding issues)
+        label_text = media_item['name']
 
         label = wx.StaticText(parent, label=label_text)
         label.SetFont(
