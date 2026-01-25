@@ -233,7 +233,7 @@ class StoryCameraFrame(wx.Frame):
         rec_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         # Recording dot
-        rec_dot = wx.StaticText(self.recording_indicator, label="●")
+        rec_dot = wx.StaticText(self.recording_indicator, label="O")
         rec_dot.SetForegroundColour(wx.WHITE)
         rec_dot.SetFont(
             wx.Font(
@@ -439,10 +439,6 @@ class StoryCameraFrame(wx.Frame):
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, self.update_frame, self.timer)
         self.timer.Start(TIMER_INTERVAL_MS)
-
-    # =========================================================================
-    # CAMERA CALLBACKS
-    # =========================================================================
 
     def on_camera_ready(self, camera):
         """

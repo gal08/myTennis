@@ -2,8 +2,6 @@
 Gal Haham
 Full comments window for viewing and adding video comments.
 Separated from VideoInteractionFrame for better code organization.
-REFACTORED: init_ui split into helper methods, proper documentation,
-all magic numbers replaced with named constants, long methods split.
 """
 import wx
 
@@ -98,9 +96,6 @@ class CommentsFrame(wx.Frame):
     - Add new comments
     - Refresh comments
     - Navigate back to parent frame
-
-    REFACTORED: Split from VideoInteractionFrame.py into separate file,
-    all magic numbers replaced with constants, long methods split.
     """
 
     def __init__(self, client, video_data, parent_frame):
@@ -416,7 +411,7 @@ class CommentsFrame(wx.Frame):
             response: Server response dict
         """
         error_msg = response.get('message', DEFAULT_ERROR_MESSAGE)
-        print(f"[DEBUG] Failed to add comment: {error_msg}")
+        print(f"Failed to add comment: {error_msg}")
         wx.MessageBox(
             f"{MSG_COMMENT_ERROR_PREFIX}{error_msg}",
             DIALOG_TITLE_ERROR,
@@ -425,7 +420,7 @@ class CommentsFrame(wx.Frame):
 
     def on_close_window(self, event):
         """
-        Handle window close event (X button).
+        Handle window close event
 
         Args:
             event: wx.CloseEvent

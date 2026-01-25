@@ -13,7 +13,6 @@ import time
 import wx
 import base64
 
-import Show_all_stories_in_wx
 from Protocol import Protocol
 from story_player_client import run_story_player_client
 from LoginSignupFrame import LoginSignupFrame

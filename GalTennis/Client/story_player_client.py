@@ -2,8 +2,6 @@
 Gal Haham
 Client for receiving and playing stories from remote server.
 Handles video frames with synchronized audio playback using OpenCV and PyAudio.
-REFACTORED: All magic numbers replaced with constants, long methods split,
-comprehensive documentation added.
 """
 import socket
 import cv2
@@ -62,8 +60,6 @@ class StoryPlayer:
     - Receive story packets (video frame + optional audio chunk).
     - Display frames using OpenCV and play synchronized audio with PyAudio.
     - Support skipping, disconnecting, and cleanup of resources.
-
-    REFACTORED: All magic numbers replaced with constants, methods split.
     """
 
     def __init__(self, host=STORY_SERVER_HOST, port=STORY_SERVER_PORT):
@@ -92,7 +88,7 @@ class StoryPlayer:
             print(f"Connecting to server {self.host}: {self.port}...")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.host, self.port))
-            print(f"✓ Connected to server")
+            print(f"Connected to server")
 
             # Receive story info
             if not self._receive_story_info():
@@ -139,7 +135,7 @@ class StoryPlayer:
 
     def _print_story_info(self):
         """Print received story information to console."""
-        print(f"✓ Story info received: ")
+        print(f"Story info received: ")
         print(f"   Type: {self.story_info['type']}")
         print(
             f"   Video: {self.story_info['width']}x"
@@ -165,7 +161,7 @@ class StoryPlayer:
                 output=True,
                 frames_per_buffer=self.story_info['samples_per_frame']
             )
-            print(f"✓✓✓ Audio initialized and ready! ✓✓✓")
+            print(f"Audio initialized and ready!")
             print(f"   Sample rate: {self.story_info['audio_sample_rate']} Hz")
             print(f"   Channels: {self.story_info['audio_channels']}")
         except Exception as e:

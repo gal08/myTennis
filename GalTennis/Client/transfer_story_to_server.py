@@ -85,8 +85,6 @@ class MediaClient:
 
         Raises:
             FileNotFoundError: If file does not exist
-
-        REFACTORED: Split into helper methods for better organization.
         """
         # Load and encode file
         file_bytes = self._load_file(file_path)

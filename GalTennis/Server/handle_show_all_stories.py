@@ -2,8 +2,6 @@
 Gal Haham
 Media server for displaying story thumbnails.
 Handles image and video preview generation and streaming to clients.
-REFACTORED: All magic numbers and strings replaced with constants,
-long methods split, comprehensive documentation added.
 """
 import socket
 import json
@@ -45,8 +43,6 @@ class MediaServer:
     - Scan media folder for images and videos
     - Generate thumbnails for preview
     - Send media information to clients
-
-    REFACTORED: All magic numbers extracted, methods split.
     """
 
     def __init__(

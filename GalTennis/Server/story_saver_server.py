@@ -203,7 +203,7 @@ class MediaServer:
     def _send_success_response(self, client_socket, saved_path, file_size):
         """Send success response to client and log the save."""
         print(
-            f"[STORY UPLOAD] Saved story → "
+            f"[STORY UPLOAD] Saved story"
             f"{saved_path} ({file_size} bytes)"
         )
         try:

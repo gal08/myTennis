@@ -156,7 +156,7 @@ class StoryPlayerServer:
         info_data = pickle.dumps(story_info)
         self.client_socket.sendall(struct.pack("!L", len(info_data)))
         self.client_socket.sendall(info_data)
-        print(f"✓ Story info sent: {story_info}")
+        print(f"Story info sent: {story_info}")
 
     def _send_image_frames(self, img, total_frames):
         """Send image frames repeatedly to simulate video."""
@@ -337,7 +337,7 @@ class StoryPlayerServer:
 
     def _print_video_info(self, video_props, audio_info, story_info):
         """Print video streaming information."""
-        print(f"✓ Story info sent")
+        print(f"Story info sent")
         print(
             f"   Video: {video_props['width']}x{video_props['height']} "
             f"@ {video_props['fps']: .2f} FPS"
@@ -453,7 +453,7 @@ class StoryPlayerServer:
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(SINGLE_CONNECTION_BACKLOG)
             print(
-                f"✓ Server listening on "
+                f"Server listening on "
                 f"{self.host}: {self.port}"
             )
             return True

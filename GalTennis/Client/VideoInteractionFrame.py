@@ -19,8 +19,6 @@ class VideoInteractionFrame(wx.Frame):
     - Like/unlike videos
     - View and add comments
     - Comment preview
-
-    REFACTORED: Large init_ui method split into focused UI creation helpers.
     """
 
     def __init__(self, client, video_data, parent_window=None):

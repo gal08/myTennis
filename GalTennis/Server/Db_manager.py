@@ -3,7 +3,6 @@ Gal Haham
 Database Manager - Centralized database operations for Tennis Social.
 Handles all SQLite database interactions with proper connection management,
 error handling, and query execution.
-REFACTORED: Added constants for indices and strings, split long methods.
 """
 import sqlite3
 from typing import Optional, List, Dict, Any, Tuple
@@ -104,8 +103,6 @@ class DBManager:
     - Provide safe query execution with error handling
     - Initialize and maintain database schema
     - Offer convenience methods for common operations
-
-    REFACTORED: All indices and strings extracted to constants.
     """
 
     def __init__(self, db_name: str = DB_NAME):

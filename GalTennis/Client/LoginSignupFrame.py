@@ -2,8 +2,6 @@
 Gal Haham
 Combined login and signup GUI with tabbed interface.
 Supports regular and admin user registration with secret key validation.
-REFACTORED: All magic numbers replaced with constants, long methods split,
-comprehensive documentation added.
 """
 import wx
 
@@ -58,8 +56,6 @@ class LoginSignupFrame(wx.Frame):
     The frame communicates with the backend via a Client instance
     injected as 'client_instance'. All server interactions
     are performed using client._send_request().
-
-    REFACTORED: All magic numbers replaced, long methods split.
     """
 
     def __init__(self, client_instance):

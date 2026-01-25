@@ -2,7 +2,6 @@
 Gal Haham
 Client Handler
 Manages individual client streaming sessions
-REFACTORED: _stream_loop split into smaller helper methods
 """
 import time
 from VideoStreamManager import VideoStreamManager

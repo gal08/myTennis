@@ -272,7 +272,6 @@ class VideoGridPanel(wx.Panel):
         Returns:
             wx.StaticText: Title label
         """
-        # Just show the filename without emoji (encoding issues)
         label_text = media_item['name']
 
         label = wx.StaticText(parent, label=label_text)

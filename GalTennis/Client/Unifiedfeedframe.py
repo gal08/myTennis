@@ -50,7 +50,6 @@ class UnifiedFeedFrame(wx.Frame):
     Features:
     - Stories tab with grid of story thumbnails
     - Videos tab with grid of video thumbnails
-    - Profile tab (future)
     - Header with notifications and settings
     """
 
@@ -177,16 +176,6 @@ class UnifiedFeedFrame(wx.Frame):
         self.videos_btn.Bind(wx.EVT_BUTTON, lambda e: self.show_videos_tab())
         tab_sizer.Add(self.videos_btn, 0, wx.ALL, 5)
 
-        # Profile tab
-        self.profile_btn = wx.Button(
-            tab_panel,
-            label="Profile",
-            size=(200, 50)
-        )
-        self.profile_btn.SetBackgroundColour(COLOR_TAB_INACTIVE)
-        self.profile_btn.Bind(wx.EVT_BUTTON, lambda e: self.show_profile_tab())
-        tab_sizer.Add(self.profile_btn, 0, wx.ALL, 5)
-
         tab_panel.SetSizer(tab_sizer)
         return tab_panel
 
@@ -195,21 +184,14 @@ class UnifiedFeedFrame(wx.Frame):
         if self.current_tab == "stories":
             self.stories_btn.SetBackgroundColour(COLOR_TAB_ACTIVE)
             self.videos_btn.SetBackgroundColour(COLOR_TAB_INACTIVE)
-            self.profile_btn.SetBackgroundColour(COLOR_TAB_INACTIVE)
         elif self.current_tab == "videos":
             self.stories_btn.SetBackgroundColour(COLOR_TAB_INACTIVE)
             self.videos_btn.SetBackgroundColour(COLOR_TAB_ACTIVE)
-            self.profile_btn.SetBackgroundColour(COLOR_TAB_INACTIVE)
-        elif self.current_tab == "profile":
             self.stories_btn.SetBackgroundColour(COLOR_TAB_INACTIVE)
             self.videos_btn.SetBackgroundColour(COLOR_TAB_INACTIVE)
-            self.profile_btn.SetBackgroundColour(COLOR_TAB_ACTIVE)
 
         self.stories_btn.Refresh()
         self.videos_btn.Refresh()
-        self.profile_btn.Refresh()
-
-    # ==================== STORIES TAB ====================
 
     def show_stories_tab(self):
         """Show stories tab with grid of thumbnails."""
@@ -238,7 +220,11 @@ class UnifiedFeedFrame(wx.Frame):
         header_sizer.AddStretchSpacer(1)
 
         # Post Story button
-        post_btn = wx.Button(header_panel, label="+ Post Story", size=(150, 40))
+        post_btn = wx.Button(
+            header_panel,
+            label="+ Post Story",
+            size=(150, 40)
+        )
         post_btn.SetBackgroundColour(COLOR_TAB_ACTIVE)
         post_btn.SetForegroundColour(COLOR_WHITE)
         post_btn.Bind(wx.EVT_BUTTON, self.on_post_story)
@@ -254,7 +240,10 @@ class UnifiedFeedFrame(wx.Frame):
         """Load stories from server and display in grid."""
         try:
             # Request server to start thumbnail server
-            response = self.client._send_request('GET_IMAGES_OF_ALL_VIDEOS', {})
+            response = self.client._send_request(
+                'GET_IMAGES_OF_ALL_VIDEOS',
+                {}
+            )
             time.sleep(SERVER_START_DELAY)
 
             # Fetch stories
@@ -266,7 +255,12 @@ class UnifiedFeedFrame(wx.Frame):
                     label="No stories yet. Post your first story!"
                 )
                 no_stories.SetForegroundColour(wx.Colour(150, 150, 150))
-                self.content_sizer.Add(no_stories, 0, wx.ALL | wx.ALIGN_CENTER, 50)
+                self.content_sizer.Add(
+                    no_stories,
+                    0,
+                    wx.ALL | wx.ALIGN_CENTER,
+                    50
+                )
             else:
                 # Create grid
                 grid_panel = wx.Panel(self.content_scroll)
@@ -282,7 +276,12 @@ class UnifiedFeedFrame(wx.Frame):
                     grid_sizer.Add(story_card, 0, wx.EXPAND)
 
                 grid_panel.SetSizer(grid_sizer)
-                self.content_sizer.Add(grid_panel, 0, wx.ALL | wx.ALIGN_CENTER, 20)
+                self.content_sizer.Add(
+                    grid_panel,
+                    0,
+                    wx.ALL | wx.ALIGN_CENTER,
+                    20
+                )
 
         except Exception as e:
             error_msg = wx.StaticText(
@@ -334,7 +333,14 @@ class UnifiedFeedFrame(wx.Frame):
 
         # Info
         name_label = wx.StaticText(card, label=story['name'][:20])
-        name_label.SetFont(wx.Font(9, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        name_label.SetFont(
+            wx.Font(
+                9,
+                wx.FONTFAMILY_DEFAULT,
+                wx.FONTSTYLE_NORMAL,
+                wx.FONTWEIGHT_BOLD
+            )
+        )
         card_sizer.Add(name_label, 0, wx.ALL | wx.CENTER, 5)
 
         card.SetSizer(card_sizer)
@@ -362,10 +368,12 @@ class UnifiedFeedFrame(wx.Frame):
 
     def on_post_story(self, event):
         """Open camera to post new story."""
-        on_post_callback = lambda caption, media_type, media_data: \
+
+        def on_post_callback(caption, media_type, media_data):
             self.client.on_story_post_callback(caption, media_type, media_data)
 
-        on_closed_callback = lambda: print("Camera closed")
+        def on_closed_callback():
+            print("Camera closed")
 
         StoryCameraFrame(
             None,
@@ -373,8 +381,6 @@ class UnifiedFeedFrame(wx.Frame):
             on_post_callback,
             on_closed_callback
         )
-
-    # ==================== VIDEOS TAB ====================
 
     def show_videos_tab(self):
         """Show videos tab with grid of thumbnails."""
@@ -431,7 +437,12 @@ class UnifiedFeedFrame(wx.Frame):
                     label="No videos yet. Upload your first video!"
                 )
                 no_videos.SetForegroundColour(wx.Colour(150, 150, 150))
-                self.content_sizer.Add(no_videos, 0, wx.ALL | wx.ALIGN_CENTER, 50)
+                self.content_sizer.Add(
+                    no_videos,
+                    0,
+                    wx.ALL | wx.ALIGN_CENTER,
+                    50
+                )
             else:
                 # Create grid
                 grid_panel = wx.Panel(self.content_scroll)
@@ -447,7 +458,12 @@ class UnifiedFeedFrame(wx.Frame):
                     grid_sizer.Add(video_card, 0, wx.EXPAND)
 
                 grid_panel.SetSizer(grid_sizer)
-                self.content_sizer.Add(grid_panel, 0, wx.ALL | wx.ALIGN_CENTER, 20)
+                self.content_sizer.Add(
+                    grid_panel,
+                    0,
+                    wx.ALL | wx.ALIGN_CENTER,
+                    20
+                )
 
         except Exception as e:
             error_msg = wx.StaticText(
@@ -499,19 +515,46 @@ class UnifiedFeedFrame(wx.Frame):
 
         # Video info
         name_label = wx.StaticText(card, label=video['name'][:20])
-        name_label.SetFont(wx.Font(9, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD))
+        name_label.SetFont(
+            wx.Font(
+                9,
+                wx.FONTFAMILY_DEFAULT,
+                wx.FONTSTYLE_NORMAL,
+                wx.FONTWEIGHT_BOLD
+            )
+        )
         card_sizer.Add(name_label, 0, wx.ALL | wx.CENTER, 3)
 
         # Category and level
-        meta_text = f"{video.get('category', 'N/A')} - {video.get('level', 'N/A')}"
+        meta_text = (
+            f"{video.get('category', 'N/A')} - "
+            f"{video.get('level', 'N/A')}"
+        )
         meta_label = wx.StaticText(card, label=meta_text)
-        meta_label.SetFont(wx.Font(8, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_ITALIC, wx.FONTWEIGHT_NORMAL))
+        meta_label.SetFont(
+            wx.Font(
+                8,
+                wx.FONTFAMILY_DEFAULT,
+                wx.FONTSTYLE_ITALIC,
+                wx.FONTWEIGHT_NORMAL
+            )
+        )
         meta_label.SetForegroundColour(wx.Colour(100, 100, 100))
         card_sizer.Add(meta_label, 0, wx.ALL | wx.CENTER, 2)
 
         # Uploader
-        uploader_label = wx.StaticText(card, label=f"@{video.get('uploader', 'unknown')}")
-        uploader_label.SetFont(wx.Font(8, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL))
+        uploader_label = wx.StaticText(
+            card,
+            label=f"@{video.get('uploader', 'unknown')}"
+        )
+        uploader_label.SetFont(
+            wx.Font(
+                8,
+                wx.FONTFAMILY_DEFAULT,
+                wx.FONTSTYLE_NORMAL,
+                wx.FONTWEIGHT_NORMAL
+            )
+        )
         uploader_label.SetForegroundColour(wx.Colour(120, 120, 120))
         card_sizer.Add(uploader_label, 0, wx.ALL | wx.CENTER, 2)
 
@@ -543,49 +586,6 @@ class UnifiedFeedFrame(wx.Frame):
     def on_upload_video(self, event):
         """Open upload video window."""
         UploadVideoFrame(client=self.client)
-
-    # ==================== PROFILE TAB ====================
-
-    def show_profile_tab(self):
-        """Show profile tab (placeholder for now)."""
-        self.current_tab = "profile"
-        self._update_tab_colors()
-
-        # Clear content
-        self.content_sizer.Clear(True)
-
-        # Profile content
-        profile_panel = wx.Panel(self.content_scroll)
-        profile_panel.SetBackgroundColour(COLOR_BACKGROUND)
-        profile_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        # Title
-        title = wx.StaticText(profile_panel, label=f"Profile: {self.username}")
-        title_font = wx.Font(
-            20,
-            wx.FONTFAMILY_DEFAULT,
-            wx.FONTSTYLE_NORMAL,
-            wx.FONTWEIGHT_BOLD
-        )
-        title.SetFont(title_font)
-        title.SetForegroundColour(COLOR_TEXT_DARK)
-        profile_sizer.Add(title, 0, wx.ALL | wx.CENTER, 30)
-
-        # Placeholder text
-        placeholder = wx.StaticText(
-            profile_panel,
-            label="Profile features coming soon!\n\nYou'll be able to:\n- View your statistics\n- See your videos\n- Edit your profile"
-        )
-        placeholder.SetForegroundColour(wx.Colour(100, 100, 100))
-        profile_sizer.Add(placeholder, 0, wx.ALL | wx.CENTER, 20)
-
-        profile_panel.SetSizer(profile_sizer)
-        self.content_sizer.Add(profile_panel, 1, wx.EXPAND)
-
-        self.content_scroll.Layout()
-        self.content_scroll.FitInside()
-
-    # ==================== LOGOUT ====================
 
     def on_logout(self, event):
         """Handle logout - close application gracefully."""

@@ -130,7 +130,8 @@ class StoryGridPanel(wx.Panel):
         # Connect to server
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((SERVER_IP, STORY_THUMBNAIL_PORT))
-
+        key = key_exchange.KeyExchange.send_recv_key((sock, None))
+        conn = (client_socket, key)
         # Send request
         sock.sendall("GET_MEDIA".encode('utf-8'))
 

@@ -3,8 +3,6 @@ Gal Haham
 Video media server for displaying video thumbnails with metadata.
 Handles video preview generation, metadata extraction,
  and streaming to clients.
-REFACTORED: All magic numbers and strings replaced with constants,
-long methods split, comprehensive documentation added.
 """
 import socket
 import json
@@ -99,8 +97,6 @@ class VideoMediaServer:
     - Generate thumbnails for preview
     - Query database for video information
     - Send video information to clients
-
-    REFACTORED: All magic numbers extracted, methods split.
     """
 
     def __init__(
