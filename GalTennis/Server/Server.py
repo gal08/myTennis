@@ -12,6 +12,8 @@ import json
 import threading
 import time
 import os
+import key_exchange
+import aes_cipher
 
 from Protocol import Protocol
 from Methods import RequestMethodsHandler
@@ -27,6 +29,8 @@ DEFAULT_HOST = '0.0.0.0'
 DEFAULT_PORT = 5000
 MAX_PENDING_CONNECTIONS = 5
 SOCKET_REUSE_ADDRESS = 1
+SOCK = 0
+KEY = 1
 
 VIDEO_FOLDER = "videos"
 STORY_FOLDER = "stories"
@@ -67,10 +71,11 @@ class Server:
         # Ensure folders
         os.makedirs(VIDEO_FOLDER, exist_ok=True)
         os.makedirs(STORY_FOLDER, exist_ok=True)
+        self._create_server_socket()
 
     def start(self):
         """Start the main TCP server."""
-        self._create_server_socket()
+        #self._create_server_socket()
         self._print_startup_banner()
 
         # Start auxiliary servers
@@ -176,9 +181,13 @@ class Server:
         Args:
             client_socket: Client socket connection
         """
+        conn = (client_socket, None)
+        key = key_exchange.KeyExchange.recv_send_key(conn)
+        print("key =", key, "len =", len(key))
+        conn = (client_socket, key)
         try:
             while True:
-                request_data = self._receive_request(client_socket)
+                request_data = self._receive_request(conn)
                 if not request_data:
                     break
 
@@ -186,7 +195,7 @@ class Server:
                 response = self.methods_handler.route_request(request_data)
 
                 # Send response
-                self._send_response(client_socket, response)
+                self._send_response(conn, response)
 
         except Exception as e:
             print(f"[ERROR] Client handling: {e}")
@@ -195,7 +204,7 @@ class Server:
         finally:
             client_socket.close()
 
-    def _receive_request(self, client_socket: socket.socket) -> dict:
+    def _receive_request(self, conn) -> dict:
         """
         Receive and parse client request.
 
@@ -205,7 +214,8 @@ class Server:
         Returns:
             Parsed request dictionary or None
         """
-        data_raw = Protocol.recv(client_socket)
+        data_raw = Protocol.recv(conn)
+        #the decrypt data
         if not data_raw:
             return None
 
@@ -218,7 +228,7 @@ class Server:
         data_json = data_raw[start_index:].strip()
         return json.loads(data_json)
 
-    def _send_response(self, client_socket: socket.socket, response: dict):
+    def _send_response(self, conn, response: dict):
         """
         Send response to client.
 
@@ -226,7 +236,7 @@ class Server:
             client_socket: Client socket
             response: Response dictionary
         """
-        Protocol.send(client_socket, json.dumps(response))
+        Protocol.send(json.dumps(response), conn)
 
     def _send_error_response(self, client_socket: socket.socket, error: str):
         """

@@ -12,6 +12,7 @@ import sys
 import time
 import wx
 import base64
+import key_exchange
 
 from Protocol import Protocol
 from story_player_client import run_story_player_client
@@ -47,14 +48,19 @@ class Client:
     def __init__(self):
         """
         Initialize the Tennis Social client.
-
         Sets up network configuration, user state, and file system.
         """
         self.host = HOST
         self.port = PORT
+        self.my_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.my_socket.connect((self.host, self.port))
         self.username = None
         self.is_admin = USER_ROLE_REGULAR
         self._ensure_video_folder_exists()
+        temp_conn = (self.my_socket, None)
+        key = key_exchange.KeyExchange.send_recv_key(temp_conn)
+        self.conn = (self.my_socket, key)
+        print("finish init")
 
     def _ensure_video_folder_exists(self):
         """Create video folder if it doesn't exist."""
@@ -74,10 +80,6 @@ class Client:
             dict: Server response with 'status' and optional data
         """
         try:
-            # Create a socket connection
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect((self.host, self.port))
-
             # Prepare request data as JSON
             request_data = json.dumps({
                 "type": request_type,
@@ -85,10 +87,10 @@ class Client:
             })
 
             # Send data to the server using Protocol
-            Protocol.send(client_socket, request_data)
+            Protocol.send(request_data, self.conn)
 
             # Receive the response using Protocol
-            response_data = Protocol.recv(client_socket)
+            response_data = Protocol.recv(self.conn)
             response = json.loads(response_data)
 
             return response

@@ -350,4 +350,3 @@ class RequestMethodsHandler:
             Success response dictionary
         """
         return {KEY_STATUS: STATUS_SUCCESS, KEY_MESSAGE: message}
-    
