@@ -11,6 +11,7 @@ import json
 import base64
 import io
 from story_player_client import run_story_player_client
+import key_exchange
 
 
 # Server Configuration
@@ -131,7 +132,7 @@ class StoryGridPanel(wx.Panel):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((SERVER_IP, STORY_THUMBNAIL_PORT))
         key = key_exchange.KeyExchange.send_recv_key((sock, None))
-        conn = (client_socket, key)
+        conn = (sock, key)
         # Send request
         sock.sendall("GET_MEDIA".encode('utf-8'))
 

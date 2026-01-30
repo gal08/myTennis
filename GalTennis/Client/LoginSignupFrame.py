@@ -337,7 +337,7 @@ class LoginSignupFrame(wx.Frame):
 
         # Step 4: Handle response
         if response.get('status') == 'success':
-            self._handle_login_success(credentials['username'])
+            self._handle_login_success(credentials['username'], response)
         else:
             self._handle_login_failure(response)
 
@@ -378,18 +378,19 @@ class LoginSignupFrame(wx.Frame):
             'password': credentials['password']
         })
 
-    def _handle_login_success(self, username):
+    def _handle_login_success(self, username, response):
         """
         Handle successful login - REFACTORED.
 
         Args:
             username: Logged in username
+            response: Server response dict
         """
         # Set username
         self.client.username = username
 
-        # Get and set admin status
-        self._fetch_and_set_admin_status(username)
+        # Get admin status from login response
+        self.client.is_admin = response.get('is_admin', USER_ROLE_REGULAR)
 
         # Update UI
         self.login_status.SetLabel("Login successful!")
@@ -398,20 +399,6 @@ class LoginSignupFrame(wx.Frame):
 
         # Close window after delay
         wx.CallLater(LOGIN_CLOSE_DELAY_MS, self.Close)
-
-    def _fetch_and_set_admin_status(self, username):
-        """
-        Fetch user's admin status from server and update client.
-
-        Args:
-            username: Username to check
-        """
-        users_res = self.client._send_request('GET_ALL_USERS', {})
-        if users_res.get('users'):
-            for user in users_res['users']:
-                if user['username'] == username:
-                    self.client.is_admin = user['is_admin']
-                    break
 
     def _handle_login_failure(self, response):
         """
@@ -518,7 +505,7 @@ class LoginSignupFrame(wx.Frame):
         # Add admin secret if applicable
         if signup_data['is_admin']:
             payload['admin_secret'] = self.admin_secret.GetValue().strip()
-
+        print("CLIENT SEND SIGNUP TO:", self.client.host, self.client.port)
         return self.client._send_request('SIGNUP', payload)
 
     def _handle_signup_response(self, response):

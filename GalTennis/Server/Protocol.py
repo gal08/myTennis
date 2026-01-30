@@ -14,6 +14,7 @@ NO_DATA_LEFT = 0
 KEY = 1
 SOCK = 0
 
+
 class Protocol(object):
     @staticmethod
     def send(data, conn):
@@ -26,7 +27,7 @@ class Protocol(object):
             l2 = str(l1)
             l3 = l2.zfill(PADDED_LENGTH)
             l4 = l3.encode()
-            conn[SOCK].send(l4 + encoded_msg)
+            conn[SOCK].sendall(l4 + encoded_msg)  # שונה ל-sendall
         except socket.error as msg:
             print("socket error:", msg)
         except Exception as msg:
@@ -39,12 +40,16 @@ class Protocol(object):
         tot_data = b''
         while raw_size > NO_DATA_LEFT:
             data = conn[SOCK].recv(raw_size)
+            if not data:
+                raise ConnectionError("Connection closed")
             raw_size -= len(data)
             tot_data += data
         raw_size = int(tot_data.decode())
         tot_data = b''
         while raw_size > NO_DATA_LEFT:
             data = conn[SOCK].recv(raw_size)
+            if not data:
+                raise ConnectionError("Connection closed")
             raw_size -= len(data)
             tot_data += data
         if conn[KEY] is not None:
@@ -58,7 +63,7 @@ class Protocol(object):
             l2 = str(l1)
             l3 = l2.zfill(PADDED_LENGTH)
             l4 = l3.encode()
-            conn[SOCK].send(l4 + data)
+            conn[SOCK].sendall(l4 + data)  # שונה ל-sendall
         except socket.error as msg:
             print("socket error:", msg)
         except Exception as msg:
@@ -70,12 +75,16 @@ class Protocol(object):
         tot_data = b''
         while raw_size > NO_DATA_LEFT:
             data = conn[SOCK].recv(raw_size)
+            if not data:  # בדיקה חדשה
+                raise ConnectionError("Connection closed during recv_bin")
             raw_size -= len(data)
             tot_data += data
         raw_size = int(tot_data.decode())
         tot_data = b''
         while raw_size > NO_DATA_LEFT:
             data = conn[SOCK].recv(raw_size)
+            if not data:  # בדיקה חדשה
+                raise ConnectionError("Connection closed during recv_bin")
             raw_size -= len(data)
             tot_data += data
         return tot_data

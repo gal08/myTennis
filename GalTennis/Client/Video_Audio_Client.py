@@ -1,7 +1,8 @@
 """
 Gal Haham
-Video & Audio Streaming Client
-Handles connection, receiving stream data, and playback
+Video & Audio Streaming Client - ENCRYPTED VERSION
+Handles connection, receiving stream data, and playback with full encryption
+ENHANCED: Added Diffie-Hellman key exchange and AES decryption
 """
 import socket
 import cv2
@@ -10,6 +11,8 @@ import struct
 import threading
 import pyaudio
 import numpy as np
+import key_exchange
+import aes_cipher
 
 DEFAULT_CLIENT_HOST = "127.0.0.1"
 DEFAULT_CLIENT_PORT = 9999
@@ -23,18 +26,21 @@ KEYBOARD_WAIT_TIME_MS = 1
 KEY_CODE_MASK_8BIT = 0xFF
 ESCAPE_KEY_CODE = 27
 WINDOW_NOT_VISIBLE_THRESHOLD = 1
+SOCK_INDEX = 0
+KEY_INDEX = 1
 
 
 class VideoAudioClient:
     """
     Manages connection to streaming server and handles
-    video/audio playback synchronization
+    video/audio playback synchronization with ENCRYPTION
     """
 
     def __init__(self, host=DEFAULT_CLIENT_HOST, port=DEFAULT_CLIENT_PORT):
         self.host = host
         self.port = port
         self.socket = None
+        self.encrypted_conn = None  # (socket, encryption_key)
         self.stream_info = None
         self.is_playing = False
         self.stop_flag = threading.Event()
@@ -45,33 +51,43 @@ class VideoAudioClient:
         """Creates the TCP socket and attempts to connect to the server."""
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((self.host, self.port))
-        print(f"Connected to server {self.host}: {self.port}")
+        print(f"Connected to server {self.host}:{self.port}")
+
+        # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
+        print("ðŸ” Performing key exchange...")
+        temp_conn = (self.socket, None)
+        encryption_key = key_exchange.KeyExchange.send_recv_key(temp_conn)
+        self.encrypted_conn = (self.socket, encryption_key)
+        print(f"âœ… Encryption established (key length: {len(encryption_key)} bytes)")
+
         return True
 
     def _receive_stream_info(self):
-        """Receives the initial handshake packet containing stream metadata."""
+        """Receives the initial handshake packet containing stream metadata - ENCRYPTED."""
         info_size_data = self.recv_all(NETWORK_HEADER_LENGTH_BYTES)
         if not info_size_data:
-            raise ConnectionError("Failed to receive stream info size.")
+            raise ConnectionError("Failed to receive stream info size")
 
         info_size = struct.unpack("!L", info_size_data)[FIRST_TUPLE_INDEX]
         info_data = self.recv_all(info_size)
         if not info_data:
-            raise ConnectionError("Failed to receive stream info data.")
+            raise ConnectionError("Failed to receive stream info data")
 
-        self.stream_info = pickle.loads(info_data)
+        # ðŸ”’ Decrypt the stream info
+        encryption_key = self.encrypted_conn[KEY_INDEX]
+        if encryption_key:
+            decrypted_data = aes_cipher.AESCipher.decrypt(encryption_key, info_data)
+            self.stream_info = pickle.loads(decrypted_data)
+        else:
+            self.stream_info = pickle.loads(info_data)
 
-        print(f"Stream Info: ")
+        print(f"ðŸ”’ Stream Info received (ENCRYPTED): ")
         print(
             f"   Video: {self.stream_info['width']}x"
             f"{self.stream_info['height']}"
         )
-        print(f"   FPS: {self.stream_info['fps']: .2f}")
+        print(f"   FPS: {self.stream_info['fps']:.2f}")
         print(f"   Frames: {self.stream_info['total_frames']}")
-        print(
-            f"   Audio: {self.stream_info['audio_sample_rate']} Hz, "
-            f"{self.stream_info['audio_channels']} ch"
-        )
         print(f"   Has Audio: {self.stream_info['has_audio']}")
         return True
 
@@ -94,8 +110,7 @@ class VideoAudioClient:
         return True
 
     def connect(self):
-        """Orchestrates the connection process: connect,
-         receive info, init audio."""
+        """Orchestrates the connection process: connect, receive info, init audio."""
         try:
             self._connect_to_server()
             self._receive_stream_info()
@@ -103,6 +118,8 @@ class VideoAudioClient:
             return True
         except Exception as e:
             print(f"Connection error: {e}")
+            import traceback
+            traceback.print_exc()
             if self.socket:
                 self.socket.close()
             return False
@@ -118,7 +135,7 @@ class VideoAudioClient:
         return data
 
     def receive_packet(self):
-        """Receive one full packet (video frame + audio chunk)"""
+        """Receive one full ENCRYPTED packet (video frame + audio chunk)"""
         try:
             packet_size_data = self.recv_all(NETWORK_HEADER_LENGTH_BYTES)
             if not packet_size_data:
@@ -133,7 +150,17 @@ class VideoAudioClient:
             if not packet_data:
                 return None
 
-            packet = pickle.loads(packet_data)
+            # ðŸ”’ Decrypt the packet
+            encryption_key = self.encrypted_conn[KEY_INDEX]
+            if encryption_key:
+                decrypted_data = aes_cipher.AESCipher.decrypt(
+                    encryption_key,
+                    packet_data
+                )
+                packet = pickle.loads(decrypted_data)
+            else:
+                packet = pickle.loads(packet_data)
+
             return packet
 
         except Exception as e:
@@ -146,12 +173,12 @@ class VideoAudioClient:
             print("No stream info available")
             return
 
-        window_name = "Video & Audio Stream"
+        window_name = "ðŸ”’ Encrypted Video & Audio Stream"
         self._setup_window(window_name)
 
         self.is_playing = True
         frame_count = INITIAL_FRAME_COUNT
-        print("Playing video & audio stream...")
+        print("Playing encrypted video & audio stream...")
 
         while not self.stop_flag.is_set():
             packet = self.receive_packet()
@@ -171,7 +198,7 @@ class VideoAudioClient:
         self.is_playing = False
         self._teardown_window()
         self.cleanup()
-        print(f"Received {frame_count} frames")
+        print(f"Received {frame_count} encrypted frames")
 
     def _setup_window(self, window_name):
         """Initializes and configures the OpenCV display window."""
@@ -193,8 +220,7 @@ class VideoAudioClient:
         return frame_count
 
     def _play_audio_chunk(self, audio_chunk):
-        """Converts the audio chunk to bytes and
-        writes it to the audio stream."""
+        """Converts the audio chunk to bytes and writes it to the audio stream."""
         try:
             audio_bytes = audio_chunk.tobytes()
             self.audio_stream.write(audio_bytes)

@@ -13,6 +13,7 @@ REGULAR_USER = 0
 
 USER_ID_INDEX = 0
 USERNAME_INDEX = 1
+PASSWORD_INDEX = 2
 IS_ADMIN_INDEX = 2
 
 # ADMIN SECRET KEY - Change this to your own secret!
@@ -82,29 +83,23 @@ class Authentication:
     ):
         """
         Register a new user in the system.
-
-        If registering as admin (is_admin=1), requires a valid admin_secret.
-        Regular users can sign up without providing admin_secret.
-
-        Args:
-            username: Username for the new account
-            password: Password for the new account
-            is_admin: 1 for admin, 0 for regular user (default: 0)
-            admin_secret: Required if is_admin=1, must match ADMIN_SECRET_KEY
-
-        Returns:
-            dict: Response with status and message
-                - status: "success" or "error"
-                - message: Description of the result
         """
-        # Security check: If trying to register as admin, verify the secret
+        print("🔥 AUTH SIGNUP FUNCTION CALLED 🔥")
+        print("SIGNUP REQUEST:", repr(username), repr(password), is_admin)
+
+        # Admin security check
         if is_admin == ADMIN:
             if not self._verify_admin_secret(admin_secret):
-                return self._create_error_response(
-                    MESSAGE_ADMIN_SECRET_INVALID,
-                )
-        # Use DBManager to create user
-        return self.db.create_user(username, password, is_admin)
+                return {
+                    "status": "error",
+                    "message": MESSAGE_ADMIN_SECRET_INVALID
+                }
+
+        result = self.db.create_user(username, password, is_admin)
+        print("SIGNUP RESULT:", result)
+        print("USERS IN DB NOW:", self.db.get_all_users())
+
+        return result
 
     def login(self, username, password):
         """
@@ -123,7 +118,7 @@ class Authentication:
         user_data = self.db.get_user(username, password)
 
         if user_data:
-            # user_data is tuple: (id, username, is_admin)
+            # user_data is tuple: (id, username, password, is_admin)
             is_admin = user_data[IS_ADMIN_INDEX]
             return self._create_login_success_response(is_admin)
 

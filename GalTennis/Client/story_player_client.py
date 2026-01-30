@@ -1,7 +1,8 @@
 """
 Gal Haham
-Client for receiving and playing stories from remote server.
-Handles video frames with synchronized audio playback using OpenCV and PyAudio.
+Client for receiving and playing stories from remote server - ENCRYPTED VERSION
+Handles video frames with synchronized audio playback using OpenCV and PyAudio
+ENHANCED: Added full encryption support via Diffie-Hellman + AES
 """
 import socket
 import cv2
@@ -9,6 +10,8 @@ import pickle
 import struct
 import pyaudio
 import numpy as np
+import key_exchange
+import aes_cipher
 
 
 STORY_SERVER_HOST = "127.0.0.1"
@@ -24,6 +27,8 @@ DISPLAY_INDEX_OFFSET = 1
 FRAME_DELAY_MS = 1
 KEY_ESCAPE = 27
 IS_WINDOW_VISIBLE = 1
+SOCK_INDEX = 0
+KEY_INDEX = 1
 
 # Positions
 TEXT_INFO_X = 10
@@ -51,15 +56,15 @@ COLOR_YELLOW = (255, 255, 0)
 class StoryPlayer:
     """
     StoryPlayer is responsible for receiving and playing a recorded story
-    from a remote server.
+    from a remote server with FULL ENCRYPTION.
 
     Responsibilities:
-    - Connect to the story server over TCP.
-    - Receive story metadata (resolution, FPS, audio, total frames).
-    - Initialize video and audio playback pipelines.
-    - Receive story packets (video frame + optional audio chunk).
-    - Display frames using OpenCV and play synchronized audio with PyAudio.
-    - Support skipping, disconnecting, and cleanup of resources.
+    - Connect to the story server over TCP with encryption
+    - Receive ENCRYPTED story metadata (resolution, FPS, audio, total frames)
+    - Initialize video and audio playback pipelines
+    - Receive and DECRYPT story packets (video frame + optional audio chunk)
+    - Display frames using OpenCV and play synchronized audio with PyAudio
+    - Support skipping, disconnecting, and cleanup of resources
     """
 
     def __init__(self, host=STORY_SERVER_HOST, port=STORY_SERVER_PORT):
@@ -73,24 +78,32 @@ class StoryPlayer:
         self.host = host
         self.port = port
         self.socket = None
+        self.encrypted_conn = None  # (socket, encryption_key)
         self.story_info = None
         self.audio_stream = None
         self.pyaudio_instance = None
 
     def connect(self):
         """
-        Connect to server and receive story metadata.
+        Connect to server, establish encryption, and receive story metadata.
 
         Returns:
             bool: True if connection successful, False otherwise
         """
         try:
-            print(f"Connecting to server {self.host}: {self.port}...")
+            print(f"Connecting to server {self.host}:{self.port}...")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.host, self.port))
             print(f"Connected to server")
 
-            # Receive story info
+            # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
+            print("ðŸ” Performing key exchange...")
+            temp_conn = (self.socket, None)
+            encryption_key = key_exchange.KeyExchange.send_recv_key(temp_conn)
+            self.encrypted_conn = (self.socket, encryption_key)
+            print(f"âœ… Encryption established (key length: {len(encryption_key)} bytes)")
+
+            # Receive encrypted story info
             if not self._receive_story_info():
                 return False
 
@@ -102,13 +115,15 @@ class StoryPlayer:
 
         except Exception as e:
             print(f"Connection error: {e}")
+            import traceback
+            traceback.print_exc()
             if self.socket:
                 self.socket.close()
             return False
 
     def _receive_story_info(self):
         """
-        Receive and parse story metadata from server.
+        Receive and parse ENCRYPTED story metadata from server.
 
         Returns:
             bool: True if successful, False otherwise
@@ -122,26 +137,36 @@ class StoryPlayer:
             struct.unpack("!L", info_size_data)[FIRST_UNPACKED_INDEX]
         )
 
-        # Receive info data
-        info_data = self._recv_all(info_size)
-        if not info_data:
+        # Receive encrypted info data
+        encrypted_info_data = self._recv_all(info_size)
+        if not encrypted_info_data:
             raise ConnectionError("Failed to receive story info data")
 
-        # Parse story info
-        self.story_info = pickle.loads(info_data)
+        # ðŸ”’ Decrypt the story info
+        encryption_key = self.encrypted_conn[KEY_INDEX]
+        try:
+            decrypted_data = aes_cipher.AESCipher.decrypt(
+                encryption_key,
+                encrypted_info_data
+            )
+            self.story_info = pickle.loads(decrypted_data)
+        except Exception as e:
+            print(f"âŒ Failed to decrypt story info: {e}")
+            return False
+
         self._print_story_info()
 
         return True
 
     def _print_story_info(self):
         """Print received story information to console."""
-        print(f"Story info received: ")
+        print(f"ðŸ”’ Encrypted Story info received: ")
         print(f"   Type: {self.story_info['type']}")
         print(
             f"   Video: {self.story_info['width']}x"
             f"{self.story_info['height']}"
         )
-        print(f"   FPS: {self.story_info['fps']: .2f}")
+        print(f"   FPS: {self.story_info['fps']:.2f}")
         print(f"   Total frames: {self.story_info['total_frames']}")
         print(f"   Has Audio: {self.story_info['has_audio']}")
 
@@ -188,7 +213,7 @@ class StoryPlayer:
 
     def _receive_packet(self):
         """
-        Receive one packet (frame + audio) from server.
+        Receive one ENCRYPTED packet (frame + audio) from server.
 
         Returns:
             dict: Packet containing 'frame' and 'audio', or None if error
@@ -202,13 +227,24 @@ class StoryPlayer:
             packet_size = (
                 struct.unpack("!L", packet_size_data)[FIRST_UNPACKED_INDEX]
             )
-            # Get packet data
-            packet_data = self._recv_all(packet_size)
-            if not packet_data:
+
+            # Get encrypted packet data
+            encrypted_packet_data = self._recv_all(packet_size)
+            if not encrypted_packet_data:
                 return None
 
-            packet = pickle.loads(packet_data)
-            return packet
+            # ðŸ”’ Decrypt the packet
+            encryption_key = self.encrypted_conn[KEY_INDEX]
+            try:
+                decrypted_data = aes_cipher.AESCipher.decrypt(
+                    encryption_key,
+                    encrypted_packet_data
+                )
+                packet = pickle.loads(decrypted_data)
+                return packet
+            except Exception as e:
+                print(f"âŒ Failed to decrypt packet: {e}")
+                return None
 
         except Exception as e:
             print(f"Error receiving packet: {e}")
@@ -217,8 +253,7 @@ class StoryPlayer:
     def play_story(self):
         """
         Main playback loop - displays video and plays audio.
-
-        REFACTORED: Split into smaller focused methods.
+        All data is ENCRYPTED during transmission.
         """
         if not self.story_info:
             print("No story info available")
@@ -229,10 +264,10 @@ class StoryPlayer:
 
         # Main playback loop
         frame_count = STARTING_COUNT
-        print(f"Playing {self.story_info['type']} story...")
+        print(f"ðŸ”’ Playing ENCRYPTED {self.story_info['type']} story...")
 
         while True:
-            # Receive packet
+            # Receive encrypted packet
             packet = self._receive_packet()
             if packet is None:
                 print("Story ended")
@@ -266,7 +301,7 @@ class StoryPlayer:
         Returns:
             str: Window name
         """
-        window_name = f"Story - {self.story_info['type']}"
+        window_name = f"ðŸ”’ Encrypted Story - {self.story_info['type']}"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(
             window_name,
@@ -283,7 +318,7 @@ class StoryPlayer:
             frame: OpenCV frame to add text to
             frame_count: Current frame number
         """
-        # Frame info
+        # Frame info with encryption indicator
         self._add_frame_info_text(frame, frame_count)
 
         # Audio status
@@ -301,7 +336,7 @@ class StoryPlayer:
             frame_count: Current frame number
         """
         info_text = (
-            f"{self.story_info['type']} | "
+            f"ðŸ”’ {self.story_info['type']} | "
             f"Frame: {frame_count + DISPLAY_INDEX_OFFSET}/"
             f"{self.story_info['total_frames']}"
         )
@@ -380,7 +415,7 @@ class StoryPlayer:
         """
         if frame_count % FPS_RATE == MODULO_SUCCESS:
             print(
-                f"Playing frame {frame_count}/"
+                f"ðŸ”’ Playing encrypted frame {frame_count}/"
                 f"{self.story_info['total_frames']}"
             )
 
@@ -426,7 +461,7 @@ class StoryPlayer:
 
 def run_story_player_client():
     """
-    Entry point for running the story player client.
+    Entry point for running the ENCRYPTED story player client.
 
     Creates a StoryPlayer instance, connects to server, and starts playback.
     """

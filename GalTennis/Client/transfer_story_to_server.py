@@ -1,9 +1,8 @@
 """
 Gal Haham
-Media file uploader client.
-Converts images/videos to Base64 and sends them to the media server via TCP.
-REFACTORED: Split long method, added comprehensive documentation,
-added missing constants.
+Media file uploader client - ENCRYPTED VERSION
+Converts images/videos to Base64 and sends them to the media server via TCP
+ENHANCED: Added full encryption support via Diffie-Hellman + AES
 """
 import socket
 import base64
@@ -11,6 +10,8 @@ import json
 import struct
 import os
 from pathlib import Path
+import key_exchange
+import aes_cipher
 
 
 # Network Configuration
@@ -36,19 +37,21 @@ DEFAULT_USERNAME = "user"
 # Error Messages
 ERROR_FILE_NOT_FOUND = "file not found"
 
+SOCK_INDEX = 0
+KEY_INDEX = 1
+
 
 class MediaClient:
     """
-    MediaClient sends image/video files to a remote server.
+    MediaClient sends image/video files to a remote server with ENCRYPTION.
 
     Responsibilities:
     - Load a media file (image or mp4).
     - Convert file to Base64 encoded string.
     - Build a JSON payload containing file + metadata.
-    - Send payload length first (for framing), then the data.
+    - ðŸ”’ ENCRYPT the payload with AES-256
+    - Send encrypted payload to server
     - Read a short server response.
-
-    REFACTORED: Long method split into focused helper methods.
     """
 
     def __init__(self, host=HOST, port=PORT):
@@ -64,20 +67,18 @@ class MediaClient:
 
     def send_media(self, file_path, username=DEFAULT_USERNAME):
         """
-        Send a media file (image or video) to the server.
+        Send a media file (image or video) to the server with ENCRYPTION.
 
         Steps performed:
         1. Verifies that the file exists.
         2. Reads the file as raw bytes.
         3. Converts the file into Base64 so it can be sent as text.
         4. Detects whether the file is an image or a video based on extension.
-        5. Builds a JSON payload that contains:
-             - username
-             - media type (image/video)
-             - base64 media data
-        6. Opens a TCP connection to the server.
-        7. Sends the size of the payload (4 bytes) and then the payload itself.
-        8. Waits for a short response from the server and prints it.
+        5. Builds a JSON payload
+        6. ðŸ”’ Establishes encrypted connection
+        7. ðŸ”’ Encrypts the payload with AES
+        8. Sends the size of the encrypted payload and then the payload itself
+        9. Waits for a short response from the server and prints it.
 
         Args:
             file_path: Path to media file (image or video)
@@ -94,9 +95,9 @@ class MediaClient:
         media_type = self._detect_media_type(file_path)
         payload_bytes = self._build_payload(username, media_type, b64_data)
 
-        # Send to server
-        response = self._send_to_server(payload_bytes)
-        print("Server:", response)
+        # Send to server with encryption
+        response = self._send_to_server_encrypted(payload_bytes)
+        print(f"ðŸ”’ Server response: {response}")
 
     def _load_file(self, file_path):
         """
@@ -161,9 +162,9 @@ class MediaClient:
         }
         return json.dumps(payload).encode()
 
-    def _send_to_server(self, payload_bytes):
+    def _send_to_server_encrypted(self, payload_bytes):
         """
-        Send payload to server and receive response.
+        ðŸ”’ Send ENCRYPTED payload to server and receive response.
 
         Args:
             payload_bytes: Encoded payload to send
@@ -176,11 +177,25 @@ class MediaClient:
         s.connect((self.host, self.port))
 
         try:
-            # Send payload size first (for framing)
-            self._send_payload_size(s, len(payload_bytes))
+            # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
+            print("ðŸ” Performing key exchange...")
+            temp_conn = (s, None)
+            encryption_key = key_exchange.KeyExchange.send_recv_key(temp_conn)
+            encrypted_conn = (s, encryption_key)
+            print(f"âœ… Encryption established (key length: {len(encryption_key)} bytes)")
 
-            # Send payload itself
-            s.sendall(payload_bytes)
+            # ðŸ”’ Encrypt the payload
+            encrypted_payload = aes_cipher.AESCipher.encrypt(
+                encryption_key,
+                payload_bytes
+            )
+
+            # Send encrypted payload size
+            self._send_payload_size(s, len(encrypted_payload))
+
+            # Send encrypted payload
+            s.sendall(encrypted_payload)
+            print(f"ðŸ”’ Sent encrypted payload ({len(encrypted_payload)} bytes)")
 
             # Read server response
             response = s.recv(MSG_LEN).decode()
@@ -203,7 +218,7 @@ class MediaClient:
 
 def run(file_path, username=DEFAULT_USERNAME):
     """
-    Helper function to send a file in one line.
+    Helper function to send a file in one line with ENCRYPTION.
 
     Args:
         file_path: Path to media file to upload

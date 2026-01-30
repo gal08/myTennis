@@ -5,10 +5,17 @@ Handles all SQLite database interactions with proper connection management,
 error handling, and query execution.
 """
 import sqlite3
+import os
 from typing import Optional, List, Dict, Any, Tuple
 from contextlib import contextmanager
 
-DB_NAME = 'users.db'
+# 🔧 FIX: Calculate the absolute path to the database
+# This ensures Server and Client always use the SAME database file
+_DB_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_NAME = os.path.join(_DB_DIR, 'users.db')
+
+print(f"[DB_MANAGER] Database will be at: {DB_NAME}")
+
 DB_TIMEOUT_SECONDS = 10
 
 DEFAULT_IS_ADMIN = 0
@@ -110,9 +117,10 @@ class DBManager:
         Initialize the database manager.
 
         Args:
-            db_name: Name of the SQLite database file
+            db_name: Full path to SQLite database file (default: calculated from __file__)
         """
         self.db_name = db_name
+        print(f"[DBManager] Using database: {self.db_name}")
         self._initialize_schema()
 
     @contextmanager
@@ -223,24 +231,12 @@ class DBManager:
                 FOREIGN KEY (username) REFERENCES {TABLE_USERS}(username))''')
 
     def execute_query(
-        self,
-        query: str,
-        params: tuple = (),
-        fetch_one: bool = False,
-        fetch_all: bool = True
-    ) -> Optional[Any]:
-        """
-        Execute a query with proper error handling.
-
-        Args:
-            query: SQL query to execute
-            params: Query parameters
-            fetch_one: If True, fetch single result
-            fetch_all: If True, fetch all results
-
-        Returns:
-            Query results or None
-        """
+            self,
+            query: str,
+            params: tuple = (),
+            fetch_one: bool = False,
+            fetch_all: bool = True
+    ):
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -251,7 +247,12 @@ class DBManager:
                     return cursor.fetchone()
                 if fetch_all:
                     return cursor.fetchall()
-                return None
+
+                # INSERT/UPDATE/DELETE success
+                return True
+
+        except sqlite3.IntegrityError:
+            raise
         except Exception as e:
             print(f"Database error: {e}")
             return None
@@ -277,37 +278,19 @@ class DBManager:
             print(f"Database error: {e}")
             return False
 
-    def create_user(
-        self,
-        username: str,
-        password: str,
-        is_admin: int = DEFAULT_IS_ADMIN
-    ) -> Dict[str, str]:
-        """
-        Create a new user in the database.
-
-        Args:
-            username: Username
-            password: Password
-            is_admin: Admin status (1 or 0)
-
-        Returns:
-            Dict with status and message
-        """
+    def create_user(self, username: str, password: str, is_admin: int = DEFAULT_IS_ADMIN):
         try:
-            query = f'''
+            query = f"""
                 INSERT INTO {TABLE_USERS} (username, password, is_admin)
                 VALUES (?, ?, ?)
-            '''
-            self.execute_query(
-                query,
-                (username, password, is_admin),
-                fetch_all=False
-            )
-            return {
-                "status": STATUS_SUCCESS,
-                "message": MESSAGE_USER_CREATED
-            }
+            """
+            ok = self.execute_query(query, (username, password, is_admin), fetch_all=False)
+
+            if ok is None:
+                return {"status": STATUS_ERROR, "message": "DB insert failed"}
+
+            return {"status": STATUS_SUCCESS, "message": MESSAGE_USER_CREATED}
+
         except sqlite3.IntegrityError:
             return {"status": STATUS_ERROR, "message": MESSAGE_USER_EXISTS}
         except Exception as e:
@@ -719,5 +702,5 @@ def get_db_manager() -> DBManager:
     """
     global _db_manager_instance
     if _db_manager_instance is None:
-        _db_manager_instance = DBManager()
+        _db_manager_instance = DBManager(DB_NAME)
     return _db_manager_instance

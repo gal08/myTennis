@@ -1,7 +1,8 @@
 """
 Gal Haham
-Client Handler
-Manages individual client streaming sessions
+Client Handler - ENCRYPTED VERSION
+Manages individual client streaming sessions with encryption
+ENHANCED: Now supports encrypted connections (socket, key) tuple
 """
 import time
 from VideoStreamManager import VideoStreamManager
@@ -10,19 +11,32 @@ from NetworkManager import NetworkManager
 
 INITIAL_FRAME_COUNT = 0
 FRAME_INCREMENT_STEP = 1
+SOCK_INDEX = 0
+KEY_INDEX = 1
 
 
 class ClientHandler:
     """
-    Handles streaming to a single client:
+    Handles streaming to a single client with encryption:
     - Coordinates video and audio streaming
     - Manages synchronization between video frames and audio chunks
     - Handles client disconnection and cleanup
+    - ðŸ”’ Supports encrypted connections
     """
 
-    def __init__(self, video_path, client_socket, address):
+    def __init__(self, video_path, encrypted_conn, address):
+        """
+        Initialize client handler with encrypted connection.
+
+        Args:
+            video_path: Path to video file
+            encrypted_conn: Tuple of (socket, encryption_key)
+            address: Client address
+        """
         self.video_path = video_path
-        self.client_socket = client_socket
+        self.encrypted_conn = encrypted_conn  # (socket, key)
+        self.client_socket = encrypted_conn[SOCK_INDEX]
+        self.encryption_key = encrypted_conn[KEY_INDEX]
         self.address = address
 
         self.video_manager = VideoStreamManager(video_path)
@@ -42,21 +56,23 @@ class ClientHandler:
             # 2. Setup Audio
             self.audio_manager.setup_audio_extraction(video_info['fps'])
 
-            # 3. Send Stream Info (Handshake)
+            # 3. Send Stream Info (Handshake) - ENCRYPTED
             self._send_handshake(video_info)
 
-            # 4. Main Streaming Loop
+            # 4. Main Streaming Loop - ENCRYPTED
             self._stream_loop(video_info)
 
         except (ConnectionResetError, BrokenPipeError):
             print(f"Client {self.address} disconnected")
         except Exception as e:
             print(f"Error with client {self.address}: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
             self._cleanup()
 
     def _send_handshake(self, video_info):
-        """Sends initial stream information to the client."""
+        """Sends initial stream information to the client - ENCRYPTED."""
         audio_info = self.audio_manager.get_audio_info()
 
         stream_info = {
@@ -70,9 +86,13 @@ class ClientHandler:
             'has_audio': audio_info['has_audio']
         }
 
-        NetworkManager.send_stream_info(self.client_socket, stream_info)
+        # ðŸ”’ Send encrypted stream info
+        NetworkManager.send_stream_info_encrypted(
+            self.encrypted_conn,
+            stream_info
+        )
 
-        print(f"Streaming to {self.address}")
+        print(f"ðŸ”’ Streaming to {self.address} (ENCRYPTED)")
         print(
             f"   Video: {video_info['width']}x{video_info['height']} "
             f"@ {video_info['fps']: .2f} FPS"
@@ -83,7 +103,7 @@ class ClientHandler:
         )
 
     def _stream_loop(self, video_info):
-        """Main loop for streaming video and audio frames - REFACTORED."""
+        """Main loop for streaming video and audio frames - ENCRYPTED."""
         # Initialize streaming state
         streaming_state = self._initialize_streaming_state(video_info)
 
@@ -107,7 +127,7 @@ class ClientHandler:
 
     def _process_single_frame(self, state):
         """
-        Process and send a single frame with audio.
+        Process and send a single frame with audio - ENCRYPTED.
         Returns True if successful, False if stream ended.
         """
         frame_start = time.time()
@@ -121,7 +141,7 @@ class ClientHandler:
         # Read audio chunk
         audio_chunk = self._read_audio_chunk()
 
-        # Send packet to client
+        # Send packet to client - ENCRYPTED
         self._send_frame_packet(frame, audio_chunk, state['frame_count'])
 
         # Log progress
@@ -141,13 +161,14 @@ class ClientHandler:
         return self.audio_manager.read_audio_chunk()
 
     def _send_frame_packet(self, frame, audio_chunk, frame_number):
-        """Create and send a packet containing frame and audio."""
+        """Create and send an ENCRYPTED packet containing frame and audio."""
         packet = {
             'frame': frame,
             'audio': audio_chunk,
             'frame_number': frame_number
         }
-        NetworkManager.send_packet(self.client_socket, packet)
+        # ðŸ”’ Send encrypted packet
+        NetworkManager.send_packet_encrypted(self.encrypted_conn, packet)
 
     def _print_stream_completion(self, frame_count):
         """Print completion message when stream ends."""

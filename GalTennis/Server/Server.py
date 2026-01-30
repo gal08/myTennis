@@ -26,6 +26,7 @@ except ImportError:
     run_videos_display_server = None
 
 DEFAULT_HOST = '0.0.0.0'
+print("🔥🔥🔥 THIS IS MY SERVER WINDOW 🔥🔥🔥")
 DEFAULT_PORT = 5000
 MAX_PENDING_CONNECTIONS = 5
 SOCKET_REUSE_ADDRESS = 1
@@ -75,13 +76,19 @@ class Server:
 
     def start(self):
         """Start the main TCP server."""
-        #self._create_server_socket()
+        # self._create_server_socket()
         self._print_startup_banner()
 
         # Start auxiliary servers
+        print("[DEBUG] Starting video thumbnail server...")
         self.start_video_thumbnail_server()
-        self.start_story_thumbnail_server()
+        print("[DEBUG] Video thumbnail server started")
 
+        print("[DEBUG] Starting story thumbnail server...")
+        self.start_story_thumbnail_server()
+        print("[DEBUG] Story thumbnail server started")
+
+        print("[DEBUG] About to start main server loop...")
         try:
             self._run_server_loop()
         except KeyboardInterrupt:
@@ -115,8 +122,14 @@ class Server:
 
     def _run_server_loop(self):
         """Main server loop - accept and handle clients."""
+        print("[DEBUG] Server loop started, waiting for connections...")
         while self.running:
+            print("[DEBUG] Waiting for client to connect...")
             client_socket, addr = self.server_socket.accept()
+
+            print(f"\n{'=' * 60}")
+            print(f"🔌 NEW CLIENT CONNECTED: {addr}")
+            print(f"{'=' * 60}\n")
 
             client_thread = threading.Thread(
                 target=self.handle_client,
@@ -124,6 +137,7 @@ class Server:
                 daemon=True
             )
             client_thread.start()
+            print(f"[DEBUG] Started thread for client {addr}")
 
     def stop(self):
         """Stop the server."""
@@ -176,33 +190,54 @@ class Server:
 
     def handle_client(self, client_socket: socket.socket):
         """
-        Handle client connection.
-
-        Args:
-            client_socket: Client socket connection
+        Handle client connection - DEBUG VERSION
         """
+        print(f"\n🔵 [THREAD] handle_client() started")
+
         conn = (client_socket, None)
+        print(f"🔵 [THREAD] Starting key exchange...")
         key = key_exchange.KeyExchange.recv_send_key(conn)
-        print("key =", key, "len =", len(key))
+        print("🔵 [THREAD] key =", key, "len =", len(key))
         conn = (client_socket, key)
+
         try:
+            print(f"🔵 [THREAD] Entering request loop...")
             while True:
+                print(f"\n{'=' * 60}")
+                print(f"🔍 SERVER: Waiting for request...")
+                print(f"{'=' * 60}")
+
                 request_data = self._receive_request(conn)
                 if not request_data:
+                    print(f"❌ No request data received")
                     break
 
+                print(f"📥 Received request:")
+                print(f"   Type: {request_data.get('type')}")
+                print(f"   Payload: {request_data.get('payload')}")
+
                 # Route request using methods handler
+                print(f"\n📡 Routing to methods_handler...")
                 response = self.methods_handler.route_request(request_data)
 
+                print(f"✅ Got response from handler:")
+                print(f"   {response}")
+
                 # Send response
+                print(f"\n📤 Sending response to client...")
                 self._send_response(conn, response)
+                print(f"✅ Response sent!")
+                print(f"{'=' * 60}\n")
 
         except Exception as e:
-            print(f"[ERROR] Client handling: {e}")
+            print(f"❌ [ERROR] Client handling: {e}")
+            import traceback
+            traceback.print_exc()
             self._send_error_response(client_socket, str(e))
 
         finally:
             client_socket.close()
+            print(f"🔌 Client disconnected")
 
     def _receive_request(self, conn) -> dict:
         """

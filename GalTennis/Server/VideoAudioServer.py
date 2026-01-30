@@ -1,9 +1,11 @@
 """
 Gal Haham
-Video & Audio Streaming Server
+Video & Audio Streaming Server - ENCRYPTED VERSION
 Main server class that coordinates all components
+ENHANCED: Added full encryption support via Diffie-Hellman + AES
 """
 import threading
+import key_exchange
 from NetworkManager import NetworkManager
 from ClientHandler import ClientHandler
 
@@ -17,7 +19,7 @@ class VideoAudioServer:
     """
     Main server class that:
     - Initializes the network layer
-    - Accepts client connections
+    - Accepts client connections with encryption
     - Spawns client handler threads
     - Manages the overall server lifecycle
     """
@@ -55,6 +57,7 @@ class VideoAudioServer:
             self.network_manager.listen(MAX_PENDING_CONNECTIONS)
             self.is_running = True
 
+            print(f"ðŸ”’ Encrypted Video Server Started")
             print(f"Video: {self.video_path}")
             print("Waiting for clients...")
 
@@ -67,7 +70,7 @@ class VideoAudioServer:
             self.stop()
 
     def _accept_single_client(self):
-        """Accept a single client connection and stream to them."""
+        """Accept a single client connection and establish encryption."""
         try:
             # Set timeout for accept
             if self.network_manager.server_socket:
@@ -80,12 +83,20 @@ class VideoAudioServer:
 
             if client_socket and self.is_running:
                 print(f"Client connected: {address}")
+
+                # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
+                print(f"ðŸ” Performing key exchange with {address}...")
+                conn = (client_socket, None)
+                encryption_key = key_exchange.KeyExchange.recv_send_key(conn)
+                encrypted_conn = (client_socket, encryption_key)
+                print(f"âœ… Encryption established (key length: {len(encryption_key)} bytes)")
+
                 self.client_connected = True
 
-                # Handle this client (blocking until done)
+                # Handle this client with encrypted connection
                 handler = ClientHandler(
                     self.video_path,
-                    client_socket,
+                    encrypted_conn,  # Pass encrypted connection
                     address
                 )
                 handler.handle_streaming()
@@ -96,6 +107,8 @@ class VideoAudioServer:
         except Exception as e:
             if self.is_running:
                 print(f"Error accepting client: {e}")
+                import traceback
+                traceback.print_exc()
 
     def stop(self):
         """Stop the server and cleanup resources"""
