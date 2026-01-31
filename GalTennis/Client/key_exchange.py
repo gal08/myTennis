@@ -7,7 +7,7 @@ class KeyExchange(object):
     @staticmethod
     def send_recv_key(conn):
         dh = DiffieHellman()
-        Protocol.Protocol.send_bin(dh.serialize_public_key(), conn)  # DH public key
+        Protocol.Protocol.send_bin(dh.serialize_public_key(), conn)
         dh_key_bytes = Protocol.Protocol.recv_bin(conn)  # DH public key
         dh_key = dh.deserialize_public_key(dh_key_bytes)
 

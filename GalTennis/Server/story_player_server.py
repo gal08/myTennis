@@ -125,7 +125,7 @@ class StoryPlayerServer:
             # Send all frames - ENCRYPTED
             self._send_image_frames_encrypted(img, story_info['total_frames'])
 
-            print(f"ðŸ”’ Encrypted image story sent successfully")
+            print(f"Encrypted image story sent successfully")
             return True
 
         except Exception as e:
@@ -157,19 +157,22 @@ class StoryPlayerServer:
         }
 
     def _send_story_info_encrypted(self, story_info):
-        """ðŸ”’ Send ENCRYPTED story information to client."""
+        """Send ENCRYPTED story information to client."""
         info_data = pickle.dumps(story_info)
 
         # Encrypt with AES
         encryption_key = self.encrypted_conn[KEY_INDEX]
         if encryption_key:
-            encrypted_data = aes_cipher.AESCipher.encrypt(encryption_key, info_data)
+            encrypted_data = aes_cipher.AESCipher.encrypt(
+                encryption_key,
+                info_data
+            )
         else:
             encrypted_data = info_data
 
         self.client_socket.sendall(struct.pack("!L", len(encrypted_data)))
         self.client_socket.sendall(encrypted_data)
-        print(f"ðŸ”’ Encrypted story info sent: {story_info}")
+        print(f"Encrypted story info sent: {story_info}")
 
     def _send_image_frames_encrypted(self, img, total_frames):
         """Send image frames repeatedly to simulate video - ENCRYPTED."""
@@ -209,13 +212,16 @@ class StoryPlayerServer:
         }
 
     def _send_packet_encrypted(self, packet):
-        """ðŸ”’ Send an ENCRYPTED packet (frame + audio) to client."""
+        """Send an ENCRYPTED packet (frame + audio) to client."""
         packet_data = pickle.dumps(packet)
 
         # Encrypt with AES
         encryption_key = self.encrypted_conn[KEY_INDEX]
         if encryption_key:
-            encrypted_data = aes_cipher.AESCipher.encrypt(encryption_key, packet_data)
+            encrypted_data = aes_cipher.AESCipher.encrypt(
+                encryption_key,
+                packet_data
+            )
         else:
             encrypted_data = packet_data
 
@@ -264,7 +270,7 @@ class StoryPlayerServer:
                 audio_setup.get('audio_process')
             )
             if success:
-                print(f"ðŸ”’ Encrypted video story sent successfully")
+                print(f"Encrypted video story sent successfully")
             return success
 
         except Exception as e:
@@ -389,8 +395,8 @@ class StoryPlayerServer:
             if frame_count % TARGET_FPS == ZERO_REMAINDER:
                 elapsed = time.time() - start_time
                 print(
-                    f"ðŸ”’ Encrypted Frame {frame_count}/"
-                    f"{video_props['total_frames']} ({elapsed:.1f}s)"
+                    f"Encrypted Frame {frame_count}/"
+                    f"{video_props['total_frames']} ({elapsed: .1f}s)"
                 )
 
             # Frame rate control
@@ -458,7 +464,10 @@ class StoryPlayerServer:
             )
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen(SINGLE_CONNECTION_BACKLOG)
-            print(f"ðŸ”’ Encrypted Story Server listening on {self.host}:{self.port}")
+            print(
+                f"Encrypted Story Server listening on "
+                f"{self.host}: {self.port}"
+            )
             return True
         except Exception as e:
             print(f"Error creating server socket: {e}")
@@ -470,15 +479,17 @@ class StoryPlayerServer:
             print(f"Waiting for client...")
             self.server_socket.settimeout(SOCKET_TIMEOUT_SECONDS)
             self.client_socket, addr = self.server_socket.accept()
-            print(f"âœ“ Client connected from {addr}")
+            print(f"Client connected from {addr}")
 
-            # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
-            print(f"ðŸ” Performing key exchange with {addr}...")
+            #  ENCRYPTION: Perform Diffie-Hellman key exchange
+            print(f" Performing key exchange with {addr}...")
             temp_conn = (self.client_socket, None)
             encryption_key = key_exchange.KeyExchange.recv_send_key(temp_conn)
             self.encrypted_conn = (self.client_socket, encryption_key)
-            print(f"âœ… Encryption established (key length: {len(encryption_key)} bytes)")
-
+            print(
+                f"Encryption established (key length: "
+                f"{len(encryption_key)} bytes)"
+            )
             self.client_socket.settimeout(None)
             return True
         except socket.timeout:
@@ -506,7 +517,7 @@ class StoryPlayerServer:
 
     def start(self):
         """Main method to start the story streaming server."""
-        print(f"ðŸ”’ Starting ENCRYPTED story server")
+        print(f"Starting ENCRYPTED story server")
         print(f"Story: {self.story_filename}")
 
         # Validate story file
@@ -532,7 +543,7 @@ class StoryPlayerServer:
                 success = self.send_video_story(self.story_path)
 
             if success:
-                print("ðŸ”’ Encrypted story transmission completed")
+                print("Encrypted story transmission completed")
             else:
                 print("Story transmission failed")
 

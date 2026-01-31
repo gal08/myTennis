@@ -4,9 +4,8 @@ Implements length-prefixed messaging for text and binary data transmission.
 """
 import socket
 import aes_cipher
+import json
 
-IP = "0.0.0.0"
-PORT = 1235
 MSG_LEN = 1024
 PADDED_LENGTH = 4
 INT_SIZE_BYTES = 4
@@ -22,12 +21,15 @@ class Protocol(object):
         try:
             encoded_msg = data.encode()
             if conn[KEY] is not None:
-                encoded_msg = aes_cipher.AESCipher.encrypt(conn[KEY], encoded_msg)
+                encoded_msg = aes_cipher.AESCipher.encrypt(
+                    conn[KEY],
+                    encoded_msg
+                )
             l1 = len(encoded_msg)
             l2 = str(l1)
             l3 = l2.zfill(PADDED_LENGTH)
             l4 = l3.encode()
-            conn[SOCK].sendall(l4 + encoded_msg)  # שונה ל-sendall
+            conn[SOCK].sendall(l4 + encoded_msg)
         except socket.error as msg:
             print("socket error:", msg)
         except Exception as msg:
@@ -57,13 +59,27 @@ class Protocol(object):
         return tot_data.decode()
 
     @staticmethod
+    def send_json(obj, conn):
+        """
+        Send a python dict/list as JSON string using Protocol.send.
+        """
+        Protocol.send(json.dumps(obj), conn)
+
+    @staticmethod
+    def recv_json(conn):
+        """
+        Receive JSON string using Protocol.recv and parse it.
+        """
+        return json.loads(Protocol.recv(conn))
+
+    @staticmethod
     def send_bin(data, conn):
         try:
             l1 = len(data)
             l2 = str(l1)
             l3 = l2.zfill(PADDED_LENGTH)
             l4 = l3.encode()
-            conn[SOCK].sendall(l4 + data)  # שונה ל-sendall
+            conn[SOCK].sendall(l4 + data)
         except socket.error as msg:
             print("socket error:", msg)
         except Exception as msg:
@@ -75,7 +91,7 @@ class Protocol(object):
         tot_data = b''
         while raw_size > NO_DATA_LEFT:
             data = conn[SOCK].recv(raw_size)
-            if not data:  # בדיקה חדשה
+            if not data:
                 raise ConnectionError("Connection closed during recv_bin")
             raw_size -= len(data)
             tot_data += data
@@ -83,7 +99,7 @@ class Protocol(object):
         tot_data = b''
         while raw_size > NO_DATA_LEFT:
             data = conn[SOCK].recv(raw_size)
-            if not data:  # בדיקה חדשה
+            if not data:
                 raise ConnectionError("Connection closed during recv_bin")
             raw_size -= len(data)
             tot_data += data

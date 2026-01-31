@@ -178,13 +178,15 @@ class MediaClient:
 
         try:
             # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
-            print("ðŸ” Performing key exchange...")
+            print("Performing key exchange...")
             temp_conn = (s, None)
             encryption_key = key_exchange.KeyExchange.send_recv_key(temp_conn)
             encrypted_conn = (s, encryption_key)
-            print(f"âœ… Encryption established (key length: {len(encryption_key)} bytes)")
-
-            # ðŸ”’ Encrypt the payload
+            print(
+                "Encryption established (key length: "
+                f"{len(encryption_key)} bytes)"
+            )
+            # Encrypt the payload
             encrypted_payload = aes_cipher.AESCipher.encrypt(
                 encryption_key,
                 payload_bytes
@@ -195,7 +197,7 @@ class MediaClient:
 
             # Send encrypted payload
             s.sendall(encrypted_payload)
-            print(f"ðŸ”’ Sent encrypted payload ({len(encrypted_payload)} bytes)")
+            print(f"Sent encrypted payload ({len(encrypted_payload)} bytes)")
 
             # Read server response
             response = s.recv(MSG_LEN).decode()

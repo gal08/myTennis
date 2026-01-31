@@ -21,7 +21,7 @@ class ClientHandler:
     - Coordinates video and audio streaming
     - Manages synchronization between video frames and audio chunks
     - Handles client disconnection and cleanup
-    - ðŸ”’ Supports encrypted connections
+    - Supports encrypted connections
     """
 
     def __init__(self, video_path, encrypted_conn, address):
@@ -86,13 +86,13 @@ class ClientHandler:
             'has_audio': audio_info['has_audio']
         }
 
-        # ðŸ”’ Send encrypted stream info
+        # Send encrypted stream info
         NetworkManager.send_stream_info_encrypted(
             self.encrypted_conn,
             stream_info
         )
 
-        print(f"ðŸ”’ Streaming to {self.address} (ENCRYPTED)")
+        print(f"Streaming to {self.address} (ENCRYPTED)")
         print(
             f"   Video: {video_info['width']}x{video_info['height']} "
             f"@ {video_info['fps']: .2f} FPS"
@@ -167,7 +167,7 @@ class ClientHandler:
             'audio': audio_chunk,
             'frame_number': frame_number
         }
-        # ðŸ”’ Send encrypted packet
+        # Send encrypted packet
         NetworkManager.send_packet_encrypted(self.encrypted_conn, packet)
 
     def _print_stream_completion(self, frame_count):

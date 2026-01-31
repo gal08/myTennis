@@ -51,19 +51,21 @@ class VideoAudioClient:
         """Creates the TCP socket and attempts to connect to the server."""
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket.connect((self.host, self.port))
-        print(f"Connected to server {self.host}:{self.port}")
+        print(f"Connected to server {self.host}: {self.port}")
 
         # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
-        print("ðŸ” Performing key exchange...")
+        print("Performing key exchange...")
         temp_conn = (self.socket, None)
         encryption_key = key_exchange.KeyExchange.send_recv_key(temp_conn)
         self.encrypted_conn = (self.socket, encryption_key)
-        print(f"âœ… Encryption established (key length: {len(encryption_key)} bytes)")
-
+        print(
+            f"Encryption established (key length: {len(encryption_key)} bytes)"
+        )
         return True
 
     def _receive_stream_info(self):
-        """Receives the initial handshake packet containing stream metadata - ENCRYPTED."""
+        """Receives the initial handshake packet containing
+         stream metadata - ENCRYPTED."""
         info_size_data = self.recv_all(NETWORK_HEADER_LENGTH_BYTES)
         if not info_size_data:
             raise ConnectionError("Failed to receive stream info size")
@@ -73,20 +75,23 @@ class VideoAudioClient:
         if not info_data:
             raise ConnectionError("Failed to receive stream info data")
 
-        # ðŸ”’ Decrypt the stream info
+        # Decrypt the stream info
         encryption_key = self.encrypted_conn[KEY_INDEX]
         if encryption_key:
-            decrypted_data = aes_cipher.AESCipher.decrypt(encryption_key, info_data)
+            decrypted_data = aes_cipher.AESCipher.decrypt(
+                encryption_key,
+                info_data
+            )
             self.stream_info = pickle.loads(decrypted_data)
         else:
             self.stream_info = pickle.loads(info_data)
 
-        print(f"ðŸ”’ Stream Info received (ENCRYPTED): ")
+        print(f"Stream Info received (ENCRYPTED): ")
         print(
             f"   Video: {self.stream_info['width']}x"
             f"{self.stream_info['height']}"
         )
-        print(f"   FPS: {self.stream_info['fps']:.2f}")
+        print(f"   FPS: {self.stream_info['fps']: .2f}")
         print(f"   Frames: {self.stream_info['total_frames']}")
         print(f"   Has Audio: {self.stream_info['has_audio']}")
         return True
@@ -110,7 +115,8 @@ class VideoAudioClient:
         return True
 
     def connect(self):
-        """Orchestrates the connection process: connect, receive info, init audio."""
+        """Orchestrates the connection process: connect,
+         receive info, init audio."""
         try:
             self._connect_to_server()
             self._receive_stream_info()
@@ -173,7 +179,7 @@ class VideoAudioClient:
             print("No stream info available")
             return
 
-        window_name = "ðŸ”’ Encrypted Video & Audio Stream"
+        window_name = "Encrypted Video & Audio Stream"
         self._setup_window(window_name)
 
         self.is_playing = True
@@ -220,7 +226,8 @@ class VideoAudioClient:
         return frame_count
 
     def _play_audio_chunk(self, audio_chunk):
-        """Converts the audio chunk to bytes and writes it to the audio stream."""
+        """Converts the audio chunk to bytes and
+         writes it to the audio stream."""
         try:
             audio_bytes = audio_chunk.tobytes()
             self.audio_stream.write(audio_bytes)

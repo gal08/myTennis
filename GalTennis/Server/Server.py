@@ -26,7 +26,6 @@ except ImportError:
     run_videos_display_server = None
 
 DEFAULT_HOST = '0.0.0.0'
-print("🔥🔥🔥 THIS IS MY SERVER WINDOW 🔥🔥🔥")
 DEFAULT_PORT = 5000
 MAX_PENDING_CONNECTIONS = 5
 SOCKET_REUSE_ADDRESS = 1
@@ -115,7 +114,7 @@ class Server:
         print(separator)
         print("Tennis Social Server")
         print(separator)
-        print(f"Main Server: {self.host}:{self.port}")
+        print(f"Main Server: {self.host}: {self.port}")
         print(separator)
         print("Server is ready and waiting for clients...")
         print(separator)
@@ -128,7 +127,7 @@ class Server:
             client_socket, addr = self.server_socket.accept()
 
             print(f"\n{'=' * 60}")
-            print(f"🔌 NEW CLIENT CONNECTED: {addr}")
+            print(f"NEW CLIENT CONNECTED: {addr}")
             print(f"{'=' * 60}\n")
 
             client_thread = threading.Thread(
@@ -192,52 +191,52 @@ class Server:
         """
         Handle client connection - DEBUG VERSION
         """
-        print(f"\n🔵 [THREAD] handle_client() started")
+        print(f"\n[THREAD] handle_client() started")
 
         conn = (client_socket, None)
-        print(f"🔵 [THREAD] Starting key exchange...")
+        print(f"[THREAD] Starting key exchange...")
         key = key_exchange.KeyExchange.recv_send_key(conn)
-        print("🔵 [THREAD] key =", key, "len =", len(key))
+        print("[THREAD] key =", key, "len =", len(key))
         conn = (client_socket, key)
 
         try:
-            print(f"🔵 [THREAD] Entering request loop...")
+            print(f"[THREAD] Entering request loop...")
             while True:
                 print(f"\n{'=' * 60}")
-                print(f"🔍 SERVER: Waiting for request...")
+                print(f"SERVER: Waiting for request...")
                 print(f"{'=' * 60}")
 
                 request_data = self._receive_request(conn)
                 if not request_data:
-                    print(f"❌ No request data received")
+                    print(f"No request data received")
                     break
 
-                print(f"📥 Received request:")
-                print(f"   Type: {request_data.get('type')}")
-                print(f"   Payload: {request_data.get('payload')}")
+                print(f"Received request: ")
+                print(f"Type: {request_data.get('type')}")
+                print(f"Payload: {request_data.get('payload')}")
 
                 # Route request using methods handler
-                print(f"\n📡 Routing to methods_handler...")
+                print(f"\nRouting to methods_handler...")
                 response = self.methods_handler.route_request(request_data)
 
-                print(f"✅ Got response from handler:")
+                print(f"Got response from handler: ")
                 print(f"   {response}")
 
                 # Send response
-                print(f"\n📤 Sending response to client...")
+                print(f"\nSending response to client...")
                 self._send_response(conn, response)
-                print(f"✅ Response sent!")
+                print(f"Response sent!")
                 print(f"{'=' * 60}\n")
 
         except Exception as e:
-            print(f"❌ [ERROR] Client handling: {e}")
+            print(f"[ERROR] Client handling: {e}")
             import traceback
             traceback.print_exc()
             self._send_error_response(client_socket, str(e))
 
         finally:
             client_socket.close()
-            print(f"🔌 Client disconnected")
+            print(f"Client disconnected")
 
     def _receive_request(self, conn) -> dict:
         """
@@ -250,7 +249,6 @@ class Server:
             Parsed request dictionary or None
         """
         data_raw = Protocol.recv(conn)
-        #the decrypt data
         if not data_raw:
             return None
 

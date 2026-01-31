@@ -57,10 +57,9 @@ class MediaServer:
             server_socket.listen(MULTI_CONNECTION_BACKLOG)
             self.is_running = True
             print(
-                f"ðŸ”’ [ENCRYPTED STORY UPLOAD] Server listening on "
-                f"{self.host}:{self.port}"
+                f"[ENCRYPTED STORY UPLOAD] Server listening on "
+                f"{self.host}: {self.port}"
             )
-            print(f"[STORY UPLOAD] Ready to receive ENCRYPTED story uploads...")
 
             while self.is_running:
                 try:
@@ -68,8 +67,11 @@ class MediaServer:
                     client_socket, addr = server_socket.accept()
                     print(f"[STORY UPLOAD] Client connected: {addr}")
 
-                    # ðŸ”’ Establish encryption
-                    encrypted_conn = self._establish_encryption(client_socket, addr)
+                    # Establish encryption
+                    encrypted_conn = self._establish_encryption(
+                        client_socket,
+                        addr
+                    )
                     if not encrypted_conn:
                         client_socket.close()
                         continue
@@ -95,7 +97,7 @@ class MediaServer:
 
     def _establish_encryption(self, client_socket, addr):
         """
-        ðŸ”’ Establish encryption with client via Diffie-Hellman.
+        Establish encryption with client via Diffie-Hellman.
 
         Args:
             client_socket: Client socket
@@ -105,20 +107,21 @@ class MediaServer:
             tuple: (socket, encryption_key) or None if failed
         """
         try:
-            print(f"ðŸ” [STORY UPLOAD] Performing key exchange with {addr}...")
+            print(f"[STORY UPLOAD] Performing key exchange with {addr}...")
             temp_conn = (client_socket, None)
             encryption_key = key_exchange.KeyExchange.recv_send_key(temp_conn)
             encrypted_conn = (client_socket, encryption_key)
-            print(f"âœ… [STORY UPLOAD] Encryption established with {addr} "
+            print(f"[STORY UPLOAD] Encryption established with {addr} "
                   f"(key length: {len(encryption_key)} bytes)")
             return encrypted_conn
         except Exception as e:
-            print(f"âŒ [STORY UPLOAD] Key exchange failed with {addr}: {e}")
+            print(f"[STORY UPLOAD] Key exchange failed with {addr}: {e}")
             return None
 
     def handle_client(self, encrypted_conn):
         """
-        Receives an ENCRYPTED media upload request from the client and saves it.
+        Receives an ENCRYPTED media upload request
+         from the client and saves it.
 
         Args:
             encrypted_conn: Tuple of (socket, encryption_key)
@@ -157,7 +160,7 @@ class MediaServer:
 
     def _receive_encrypted_payload(self, encrypted_conn):
         """
-        ðŸ”’ Receive and DECRYPT the complete payload from client.
+        Receive and DECRYPT the complete payload from client.
 
         Args:
             encrypted_conn: Tuple of (socket, encryption_key)
@@ -175,26 +178,35 @@ class MediaServer:
             return None
 
         # Get encrypted payload length
-        encrypted_payload_len = struct.unpack('!I', size_data)[SINGLE_ELEMENT_INDEX]
-        print(f"ðŸ”’ [STORY UPLOAD] Expecting {encrypted_payload_len} encrypted bytes")
-
+        encrypted_payload_len = struct.unpack(
+            '!I',
+            size_data
+        )[SINGLE_ELEMENT_INDEX]
+        print(
+            f"[STORY UPLOAD] Expecting {encrypted_payload_len} encrypted bytes"
+        )
         # Receive full encrypted payload in chunks
-        encrypted_data = self._receive_data_chunks(client_socket, encrypted_payload_len)
-
+        encrypted_data = self._receive_data_chunks(
+            client_socket,
+            encrypted_payload_len
+        )
         # Verify received data length
         if len(encrypted_data) != encrypted_payload_len:
             print(
-                f"[STORY UPLOAD] Warning: Expected {encrypted_payload_len} bytes, "
+                "[STORY UPLOAD] Warning: "
+                f"Expected {encrypted_payload_len} bytes, "
                 f"got {len(encrypted_data)}"
             )
-
-        # ðŸ”’ DECRYPT the payload
+        # DECRYPT the payload
         try:
-            decrypted_data = aes_cipher.AESCipher.decrypt(encryption_key, encrypted_data)
-            print(f"âœ… [STORY UPLOAD] Decrypted {len(decrypted_data)} bytes")
+            decrypted_data = aes_cipher.AESCipher.decrypt(
+                encryption_key,
+                encrypted_data
+            )
+            print(f"[STORY UPLOAD] Decrypted {len(decrypted_data)} bytes")
             return decrypted_data
         except Exception as e:
-            print(f"âŒ [STORY UPLOAD] Decryption failed: {e}")
+            print(f"[STORY UPLOAD] Decryption failed: {e}")
             return None
 
     def _receive_data_chunks(self, client_socket, total_bytes):
@@ -261,7 +273,8 @@ class MediaServer:
         return full_path
 
     def _generate_unique_filename(self, username, media_type):
-        """Generate a unique filename based on username, timestamp, and type."""
+        """Generate a unique filename based on
+        username, timestamp, and type."""
         timestamp = int(time.time())
         ext = ".mp4" if media_type == "video" else ".jpg"
         return f"story_{username}_{timestamp}{ext}"
@@ -269,7 +282,7 @@ class MediaServer:
     def _send_success_response(self, client_socket, saved_path, file_size):
         """Send success response to client and log the save."""
         print(
-            f"ðŸ”’ [STORY UPLOAD] Saved ENCRYPTED story "
+            f"[STORY UPLOAD] Saved ENCRYPTED story "
             f"{saved_path} ({file_size} bytes)"
         )
         try:

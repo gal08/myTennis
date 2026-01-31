@@ -45,9 +45,9 @@ class AESCipher(object):
         return key
 
 
-
 def main():
-    # Nominal way to generate a fresh key. This calls the system's random number
+    # Nominal way to generate a fresh key.
+    # This calls the system's random number
     # generator (RNG).
     key = AESCipher.generate_key()
 

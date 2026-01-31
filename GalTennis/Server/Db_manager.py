@@ -9,7 +9,7 @@ import os
 from typing import Optional, List, Dict, Any, Tuple
 from contextlib import contextmanager
 
-# 🔧 FIX: Calculate the absolute path to the database
+# FIX: Calculate the absolute path to the database
 # This ensures Server and Client always use the SAME database file
 _DB_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_NAME = os.path.join(_DB_DIR, 'users.db')
@@ -117,7 +117,8 @@ class DBManager:
         Initialize the database manager.
 
         Args:
-            db_name: Full path to SQLite database file (default: calculated from __file__)
+            db_name: Full path to SQLite database file
+            (default: calculated from __file__)
         """
         self.db_name = db_name
         print(f"[DBManager] Using database: {self.db_name}")
@@ -278,14 +279,22 @@ class DBManager:
             print(f"Database error: {e}")
             return False
 
-    def create_user(self, username: str, password: str, is_admin: int = DEFAULT_IS_ADMIN):
+    def create_user(
+            self,
+            username: str,
+            password: str,
+            is_admin: int = DEFAULT_IS_ADMIN
+    ):
         try:
             query = f"""
                 INSERT INTO {TABLE_USERS} (username, password, is_admin)
                 VALUES (?, ?, ?)
             """
-            ok = self.execute_query(query, (username, password, is_admin), fetch_all=False)
-
+            ok = self.execute_query(
+                query,
+                (username, password, is_admin),
+                fetch_all=False
+            )
             if ok is None:
                 return {"status": STATUS_ERROR, "message": "DB insert failed"}
 

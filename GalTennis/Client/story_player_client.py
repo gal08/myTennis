@@ -91,18 +91,20 @@ class StoryPlayer:
             bool: True if connection successful, False otherwise
         """
         try:
-            print(f"Connecting to server {self.host}:{self.port}...")
+            print(f"Connecting to server {self.host}: {self.port}...")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.host, self.port))
             print(f"Connected to server")
 
             # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
-            print("ðŸ” Performing key exchange...")
+            print("Performing key exchange...")
             temp_conn = (self.socket, None)
             encryption_key = key_exchange.KeyExchange.send_recv_key(temp_conn)
             self.encrypted_conn = (self.socket, encryption_key)
-            print(f"âœ… Encryption established (key length: {len(encryption_key)} bytes)")
-
+            print(
+                "Encryption established (key length: "
+                f"{len(encryption_key)} bytes)"
+            )
             # Receive encrypted story info
             if not self._receive_story_info():
                 return False
@@ -142,7 +144,7 @@ class StoryPlayer:
         if not encrypted_info_data:
             raise ConnectionError("Failed to receive story info data")
 
-        # ðŸ”’ Decrypt the story info
+        # Decrypt the story info
         encryption_key = self.encrypted_conn[KEY_INDEX]
         try:
             decrypted_data = aes_cipher.AESCipher.decrypt(
@@ -151,7 +153,7 @@ class StoryPlayer:
             )
             self.story_info = pickle.loads(decrypted_data)
         except Exception as e:
-            print(f"âŒ Failed to decrypt story info: {e}")
+            print(f"Failed to decrypt story info: {e}")
             return False
 
         self._print_story_info()
@@ -160,13 +162,13 @@ class StoryPlayer:
 
     def _print_story_info(self):
         """Print received story information to console."""
-        print(f"ðŸ”’ Encrypted Story info received: ")
+        print(f"Encrypted Story info received: ")
         print(f"   Type: {self.story_info['type']}")
         print(
             f"   Video: {self.story_info['width']}x"
             f"{self.story_info['height']}"
         )
-        print(f"   FPS: {self.story_info['fps']:.2f}")
+        print(f"   FPS: {self.story_info['fps']: .2f}")
         print(f"   Total frames: {self.story_info['total_frames']}")
         print(f"   Has Audio: {self.story_info['has_audio']}")
 
@@ -243,7 +245,7 @@ class StoryPlayer:
                 packet = pickle.loads(decrypted_data)
                 return packet
             except Exception as e:
-                print(f"âŒ Failed to decrypt packet: {e}")
+                print(f"Failed to decrypt packet: {e}")
                 return None
 
         except Exception as e:
@@ -264,7 +266,7 @@ class StoryPlayer:
 
         # Main playback loop
         frame_count = STARTING_COUNT
-        print(f"ðŸ”’ Playing ENCRYPTED {self.story_info['type']} story...")
+        print(f"Playing ENCRYPTED {self.story_info['type']} story...")
 
         while True:
             # Receive encrypted packet
@@ -336,7 +338,7 @@ class StoryPlayer:
             frame_count: Current frame number
         """
         info_text = (
-            f"ðŸ”’ {self.story_info['type']} | "
+            f"{self.story_info['type']} | "
             f"Frame: {frame_count + DISPLAY_INDEX_OFFSET}/"
             f"{self.story_info['total_frames']}"
         )

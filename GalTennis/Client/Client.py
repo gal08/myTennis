@@ -73,7 +73,7 @@ class Client:
         and returns the server's JSON response.
         """
         print(f"\n{'=' * 60}")
-        print(f"🔍 CLIENT DEBUG: _send_request called")
+        print(f"CLIENT DEBUG: _send_request called")
         print(f"{'=' * 60}")
         print(f"Request Type: {request_type}")
         print(f"Payload: {payload}")
@@ -85,40 +85,40 @@ class Client:
                 "payload": payload
             })
 
-            print(f"\n📤 JSON to send: {request_data}")
-            print(f"📡 Sending via Protocol.send()...")
+            print(f"\nJSON to send: {request_data}")
+            print(f"Sending via Protocol.send()...")
 
             # Send data to the server using Protocol
             Protocol.send(request_data, self.conn)
 
-            print(f"✅ Sent! Now waiting for response...")
+            print(f"Sent! Now waiting for response...")
 
             # Receive the response using Protocol
             response_data = Protocol.recv(self.conn)
 
-            print(f"📥 Received: {response_data}")
+            print(f"Received: {response_data}")
 
             response = json.loads(response_data)
 
-            print(f"✅ Parsed response: {response}")
+            print(f"Parsed response: {response}")
             print(f"{'=' * 60}\n")
 
             return response
 
         except ConnectionRefusedError:
-            print(f"❌ ERROR: Connection Refused!")
+            print(f"ERROR: Connection Refused!")
             return {
                 "status": "error",
                 "message": "Connection Refused. Is server running?",
             }
         except json.JSONDecodeError as e:
-            print(f"❌ ERROR: JSON Decode - {e}")
+            print(f"ERROR: JSON Decode - {e}")
             return {
                 "status": "error",
                 "message": "Invalid server response format.",
             }
         except Exception as e:
-            print(f"❌ ERROR: {e}")
+            print(f"ERROR: {e}")
             import traceback
             traceback.print_exc()
             return {"status": "error", "message": f"Network Error: {e}"}
@@ -327,7 +327,7 @@ if __name__ == '__main__':
         client_app = Client()
         client_app.run()
     except ImportError as e:
-        print(f"âœ— CRITICAL ERROR: Required video player modules missing: {e}")
+        print(f"CRITICAL ERROR: Required video player modules missing: {e}")
         print(f"Current directory: {current_dir}")
         print(f"Files in directory: {os.listdir(current_dir)}")
         sys.exit(EXIT_CODE_ERROR)

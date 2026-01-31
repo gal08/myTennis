@@ -62,7 +62,7 @@ class NetworkManager:
         """
         if self.server_socket:
             self.server_socket.listen(max_connections)
-            print(f"Server started on {self.host}:{self.port}")
+            print(f"Server started on {self.host}: {self.port}")
 
     def accept_connection(self):
         """
@@ -78,7 +78,8 @@ class NetworkManager:
     @staticmethod
     def send_stream_info(client_socket: socket.socket, stream_info: dict):
         """
-        Send stream metadata to client (UNENCRYPTED - for backward compatibility).
+        Send stream metadata to client (UNENCRYPTED
+        - for backward compatibility).
 
         Args:
             client_socket: Client socket
@@ -91,7 +92,7 @@ class NetworkManager:
     @staticmethod
     def send_stream_info_encrypted(encrypted_conn: tuple, stream_info: dict):
         """
-        ðŸ”’ Send ENCRYPTED stream metadata to client.
+        Send ENCRYPTED stream metadata to client.
 
         Args:
             encrypted_conn: Tuple of (socket, encryption_key)
@@ -103,9 +104,12 @@ class NetworkManager:
         # Serialize data
         info_data = pickle.dumps(stream_info)
 
-        # ðŸ”’ Encrypt with AES
+        # Encrypt with AES
         if encryption_key:
-            encrypted_data = aes_cipher.AESCipher.encrypt(encryption_key, info_data)
+            encrypted_data = aes_cipher.AESCipher.encrypt(
+                encryption_key,
+                info_data
+            )
         else:
             encrypted_data = info_data
 
@@ -116,7 +120,8 @@ class NetworkManager:
     @staticmethod
     def send_packet(client_socket: socket.socket, packet: dict):
         """
-        Send video/audio packet to client (UNENCRYPTED - for backward compatibility).
+        Send video/audio packet to client (UNENCRYPTED
+         - for backward compatibility).
 
         Args:
             client_socket: Client socket
@@ -129,7 +134,7 @@ class NetworkManager:
     @staticmethod
     def send_packet_encrypted(encrypted_conn: tuple, packet: dict):
         """
-        ðŸ”’ Send ENCRYPTED video/audio packet to client.
+        Send ENCRYPTED video/audio packet to client.
 
         Args:
             encrypted_conn: Tuple of (socket, encryption_key)
@@ -141,9 +146,12 @@ class NetworkManager:
         # Serialize packet
         packet_data = pickle.dumps(packet)
 
-        # ðŸ”’ Encrypt with AES
+        # Encrypt with AES
         if encryption_key:
-            encrypted_data = aes_cipher.AESCipher.encrypt(encryption_key, packet_data)
+            encrypted_data = aes_cipher.AESCipher.encrypt(
+                encryption_key,
+                packet_data
+            )
         else:
             encrypted_data = packet_data
 

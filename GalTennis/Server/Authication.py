@@ -84,7 +84,6 @@ class Authentication:
         """
         Register a new user in the system.
         """
-        print("🔥 AUTH SIGNUP FUNCTION CALLED 🔥")
         print("SIGNUP REQUEST:", repr(username), repr(password), is_admin)
 
         # Admin security check

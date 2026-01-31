@@ -3,6 +3,7 @@
 
 import hashlib
 
+
 class Hasha256:
     @staticmethod
     def get_hash(st):
@@ -14,6 +15,7 @@ class Hasha256:
         """ printing the equivalent hexadecimal value. """
         result = hashlib.sha256(st.encode())
         return result.hexdigest()
+
 
 def main():
     """ hashing tests """
