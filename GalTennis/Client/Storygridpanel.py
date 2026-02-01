@@ -12,6 +12,8 @@ import base64
 import io
 from story_player_client import run_story_player_client
 import key_exchange
+import aes_cipher
+from Protocol import Protocol
 
 
 # Server Configuration
@@ -36,6 +38,7 @@ SCROLL_RATE_Y = 20
 
 # Network
 RECV_BUFFER_SIZE = 4096
+KEY = 1
 
 # Colors
 COLOR_PANEL_BACKGROUND = wx.Colour(240, 240, 240)
@@ -68,6 +71,11 @@ class StoryGridPanel(wx.Panel):
         super().__init__(parent)
         self.media_data = []
         self.client_ref = client_ref
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.connect((SERVER_IP, STORY_THUMBNAIL_PORT))
+        temp_conn = (self.sock, None)
+        key = key_exchange.KeyExchange.send_recv_key(temp_conn)
+        self.conn = (self.sock, key)
 
         self._init_ui()
 
@@ -128,38 +136,18 @@ class StoryGridPanel(wx.Panel):
         Returns:
             list: Story data with thumbnails
         """
-        # Connect to server
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((SERVER_IP, STORY_THUMBNAIL_PORT))
-        key = key_exchange.KeyExchange.send_recv_key((sock, None))
-        conn = (sock, key)
         # Send request
-        sock.sendall("GET_MEDIA".encode('utf-8'))
+        request_data = json.dumps({
+            "type": 'GET_MEDIA',
+            "payload": {}
+        })
+        Protocol.send(request_data, self.conn)
 
         # Receive response
-        response = self._receive_full_response(sock)
-        sock.close()
+        response_data = Protocol.recv(self.conn)
 
         # Decode and return
-        return json.loads(response.decode('utf-8'))
-
-    def _receive_full_response(self, sock):
-        """
-        Receive complete response from socket.
-
-        Args:
-            sock: Socket to receive from
-
-        Returns:
-            bytes: Complete response data
-        """
-        response = b""
-        while True:
-            chunk = sock.recv(RECV_BUFFER_SIZE)
-            if not chunk:
-                break
-            response += chunk
-        return response
+        return json.loads(response_data.get('payload'))
 
     def display_media(self):
         """Display stories in grid."""
@@ -298,9 +286,13 @@ class StoryGridPanel(wx.Panel):
         Returns:
             dict: Server response
         """
-        return self.client_ref._send_request('PLAY_STORY', {
-            'filename': story_name
+        request_data = json.dumps({
+            "type": 'PLAY_STORY',
+            "payload": {'filename': story_name}
         })
+        Protocol.send(request_data, self.conn)
+        response_data = Protocol.recv(self.conn)
+        return response_data
 
     def _show_error(self, message):
         """

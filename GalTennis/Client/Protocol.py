@@ -7,8 +7,8 @@ import aes_cipher
 import json
 
 MSG_LEN = 1024
-PADDED_LENGTH = 4
-INT_SIZE_BYTES = 4
+PADDED_LENGTH = 8
+INT_SIZE_BYTES = 8
 NO_DATA_LEFT = 0
 KEY = 1
 SOCK = 0

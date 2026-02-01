@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 import key_exchange
 import aes_cipher
+from Protocol import Protocol
 
 STORIES_FOLDER = "stories"
 HOST = '0.0.0.0'
@@ -39,22 +40,25 @@ class MediaServer:
         self.port = port
         self.is_running = False
         Path(STORIES_FOLDER).mkdir(exist_ok=True)
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(
+            socket.SOL_SOCKET,
+            socket.SO_REUSEADDR,
+            SOCKET_OPTION_ENABLED
+        )
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(MULTI_CONNECTION_BACKLOG)
+        self.conn = (0,0)
 
     def start(self):
         """
         Start the server and listen for multiple encrypted clients.
         Runs continuously until stopped.
         """
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(
-            socket.SOL_SOCKET,
-            socket.SO_REUSEADDR,
-            SOCKET_OPTION_ENABLED
-        )
+
 
         try:
-            server_socket.bind((self.host, self.port))
-            server_socket.listen(MULTI_CONNECTION_BACKLOG)
+
             self.is_running = True
             print(
                 f"[ENCRYPTED STORY UPLOAD] Server listening on "
@@ -64,20 +68,17 @@ class MediaServer:
             while self.is_running:
                 try:
                     # Accept new client connection
-                    client_socket, addr = server_socket.accept()
+                    client_socket, addr = self.server_socket.accept()
                     print(f"[STORY UPLOAD] Client connected: {addr}")
 
                     # Establish encryption
-                    encrypted_conn = self._establish_encryption(
+                    self.conn = self._establish_encryption(
                         client_socket,
                         addr
                     )
-                    if not encrypted_conn:
-                        client_socket.close()
-                        continue
 
                     # Handle this encrypted client
-                    self.handle_client(encrypted_conn)
+                    self.handle_client()
 
                     # Close client connection
                     client_socket.close()
@@ -92,7 +93,7 @@ class MediaServer:
         except OSError as e:
             print(f"[STORY UPLOAD] Socket error: {e}")
         finally:
-            server_socket.close()
+            self.server_socket.close()
             print("[STORY UPLOAD] Server stopped")
 
     def _establish_encryption(self, client_socket, addr):
@@ -118,7 +119,7 @@ class MediaServer:
             print(f"[STORY UPLOAD] Key exchange failed with {addr}: {e}")
             return None
 
-    def handle_client(self, encrypted_conn):
+    def handle_client(self):
         """
         Receives an ENCRYPTED media upload request
          from the client and saves it.
@@ -126,11 +127,12 @@ class MediaServer:
         Args:
             encrypted_conn: Tuple of (socket, encryption_key)
         """
-        client_socket = encrypted_conn[SOCK_INDEX]
+        client_socket = self.conn[SOCK_INDEX]
 
         try:
             # Step 1: Receive encrypted data from client
-            payload_data = self._receive_encrypted_payload(encrypted_conn)
+            #payload_data = self._receive_encrypted_payload(encrypted_conn)
+            payload_data = Protocol.recv(self.conn)
             if not payload_data:
                 return
 
@@ -143,83 +145,20 @@ class MediaServer:
             saved_path = self._save_media_file(media_info)
 
             # Step 4: Send success response
-            self._send_success_response(
-                client_socket,
-                saved_path,
-                len(media_info['file_bytes'])
-            )
+            request_data = json.dumps({
+                "type": 'good',
+                "payload": "OK: encrypted story received"
+            })
+            Protocol.send(request_data, self.conn)
 
         except json.JSONDecodeError as e:
             print(f"[STORY UPLOAD] JSON error: {e}")
-            self._send_error_response(client_socket, "Invalid JSON")
+            self._send_error_response("Invalid JSON")
         except Exception as e:
             print(f"[STORY UPLOAD] Error: {e}")
             import traceback
             traceback.print_exc()
-            self._send_error_response(client_socket, str(e))
-
-    def _receive_encrypted_payload(self, encrypted_conn):
-        """
-        Receive and DECRYPT the complete payload from client.
-
-        Args:
-            encrypted_conn: Tuple of (socket, encryption_key)
-
-        Returns:
-            bytes: Decrypted payload data or None if failed
-        """
-        client_socket = encrypted_conn[SOCK_INDEX]
-        encryption_key = encrypted_conn[KEY_INDEX]
-
-        # Receive size header
-        size_data = client_socket.recv(SIZE_HEADER_BYTES)
-        if not size_data:
-            print("[STORY UPLOAD] No data received")
-            return None
-
-        # Get encrypted payload length
-        encrypted_payload_len = struct.unpack(
-            '!I',
-            size_data
-        )[SINGLE_ELEMENT_INDEX]
-        print(
-            f"[STORY UPLOAD] Expecting {encrypted_payload_len} encrypted bytes"
-        )
-        # Receive full encrypted payload in chunks
-        encrypted_data = self._receive_data_chunks(
-            client_socket,
-            encrypted_payload_len
-        )
-        # Verify received data length
-        if len(encrypted_data) != encrypted_payload_len:
-            print(
-                "[STORY UPLOAD] Warning: "
-                f"Expected {encrypted_payload_len} bytes, "
-                f"got {len(encrypted_data)}"
-            )
-        # DECRYPT the payload
-        try:
-            decrypted_data = aes_cipher.AESCipher.decrypt(
-                encryption_key,
-                encrypted_data
-            )
-            print(f"[STORY UPLOAD] Decrypted {len(decrypted_data)} bytes")
-            return decrypted_data
-        except Exception as e:
-            print(f"[STORY UPLOAD] Decryption failed: {e}")
-            return None
-
-    def _receive_data_chunks(self, client_socket, total_bytes):
-        """Receive data in chunks until complete."""
-        data = b''
-        while len(data) < total_bytes:
-            remaining = total_bytes - len(data)
-            chunk_size = min(RECV_CHUNK_SIZE_BYTES, remaining)
-            chunk = client_socket.recv(chunk_size)
-            if not chunk:
-                break
-            data += chunk
-        return data
+            self._send_error_response(str(e))
 
     def _parse_media_payload(self, payload_data):
         """
@@ -279,23 +218,13 @@ class MediaServer:
         ext = ".mp4" if media_type == "video" else ".jpg"
         return f"story_{username}_{timestamp}{ext}"
 
-    def _send_success_response(self, client_socket, saved_path, file_size):
-        """Send success response to client and log the save."""
-        print(
-            f"[STORY UPLOAD] Saved ENCRYPTED story "
-            f"{saved_path} ({file_size} bytes)"
-        )
-        try:
-            client_socket.send(b"OK: encrypted story received")
-        except:
-            pass
-
-    def _send_error_response(self, client_socket, error_message):
+    def _send_error_response(self, error_message):
         """Send error response to client."""
-        try:
-            client_socket.send(f"ERROR: {error_message}".encode())
-        except:
-            pass
+        request_data = json.dumps({
+            "type": 'error',
+            "payload": f"ERROR: {error_message}"
+        })
+        Protocol.send(request_data, self.conn)
 
     def stop(self):
         """Stop the server"""

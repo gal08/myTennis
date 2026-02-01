@@ -4,8 +4,14 @@ Request Methods Handler
 Centralized request routing and handling logic extracted from Server.py
 This module handles all business logic for request processing.
 """
+import base64
+import json
+import os
 import time
 import threading
+
+import cv2
+
 from Authication import Authentication
 from Videos_Handler import VideosHandler
 from Likes_Handler import LikesHandler
@@ -32,6 +38,7 @@ REQUEST_PLAY_STORY = 'PLAY_STORY'
 REQUEST_PLAY_STORY_MEDIA = 'PLAY_STORY_MEDIA'
 REQUEST_GET_IMAGES_OF_ALL_VIDEOS = 'GET_IMAGES_OF_ALL_VIDEOS'
 REQUEST_GET_ALL_VIDEOS_GRID = 'GET_ALL_VIDEOS_GRID'
+REQUEST_GET_MEDIA = 'GET_MEDIA'
 
 # Response keys
 KEY_TYPE = 'type'
@@ -70,6 +77,163 @@ STARTUP_DELAY_SECONDS = 1
 # Server configuration
 DEFAULT_HOST = '0.0.0.0'
 VIDEO_STREAM_PORT = 9999
+
+VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mkv', '.mov')
+IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif')
+
+THUMBNAIL_MAX_SIZE = 200
+IMAGE_SHAPE_SLICE_2D = 2
+
+ENCODING_FORMAT = 'utf-8'
+JPEG_EXTENSION = '.jpg'
+ENSURE_ASCII_DISABLED = False
+
+MEDIA_TYPE_IMAGE = 'image'
+MEDIA_TYPE_VIDEO = 'video'
+
+
+def _resize_to_thumbnail(img):
+    """
+    Resize image to thumbnail size while maintaining aspect ratio.
+
+    Args:
+        img: OpenCV image array
+
+    Returns:
+        Resized image
+    """
+    height, width = img.shape[:IMAGE_SHAPE_SLICE_2D]
+
+    # Calculate new dimensions
+    if height > width:
+        new_height = THUMBNAIL_MAX_SIZE
+        new_width = int(width * (THUMBNAIL_MAX_SIZE / height))
+    else:
+        new_width = THUMBNAIL_MAX_SIZE
+        new_height = int(height * (THUMBNAIL_MAX_SIZE / width))
+
+    return cv2.resize(img, (new_width, new_height))
+
+
+def _encode_image_to_base64(img) -> str:
+    """
+    Encode image to base64 string.
+
+    Args:
+        img: OpenCV image array
+
+    Returns:
+        Base64 encoded string
+    """
+    _, buffer = cv2.imencode(JPEG_EXTENSION, img)
+    return base64.b64encode(buffer).decode(ENCODING_FORMAT)
+
+
+def _extract_image_thumbnail(file_path: str):
+    """
+    Extract thumbnail from image file.
+
+    Args:
+        file_path: Path to image file
+
+    Returns:
+        Base64 encoded thumbnail or None
+    """
+    img = cv2.imread(file_path)
+    if img is None:
+        return None
+
+    # Resize image
+    resized_img = _resize_to_thumbnail(img)
+
+    # Encode to base64
+    return _encode_image_to_base64(resized_img)
+
+
+def _extract_video_thumbnail(file_path: str):
+    """
+    Extract first frame from video as thumbnail.
+
+    Args:
+        file_path: Path to video file
+
+    Returns:
+        Base64 encoded thumbnail or None
+    """
+    cap = cv2.VideoCapture(file_path)
+    ret, frame = cap.read()
+    cap.release()
+
+    if not ret:
+        return None
+
+    return _encode_image_to_base64(frame)
+
+
+def extract_thumbnail(file_path: str, file_type: str):
+    """
+    Extract preview thumbnail from media file.
+    REFACTORED: Split into separate methods for images and videos.
+
+    Args:
+        file_path: Path to media file
+        file_type: Type of media ('image' or 'video')
+
+    Returns:
+        Base64 encoded thumbnail or None if extraction failed
+    """
+    if file_type == MEDIA_TYPE_IMAGE:
+        return _extract_image_thumbnail(file_path)
+    elif file_type == MEDIA_TYPE_VIDEO:
+        return _extract_video_thumbnail(file_path)
+    return None
+
+
+
+def _add_video_to_list(
+        media_data: list,
+        filename: str,
+        file_path: str
+):
+    """
+    Add video to media list if thumbnail extraction succeeds.
+
+    Args:
+        media_data: List to append to
+        filename: Name of file
+        file_path: Full path to file
+    """
+    thumbnail = extract_thumbnail(file_path, MEDIA_TYPE_VIDEO)
+    if thumbnail:
+        media_data.append({
+            'name': filename,
+            'path': file_path,
+            'thumbnail': thumbnail,
+            'type': MEDIA_TYPE_VIDEO
+        })
+
+
+def _add_image_to_list(
+        media_data: list,
+        filename: str,
+        file_path: str
+):
+    """
+    Add image to media list if thumbnail extraction succeeds.
+
+    Args:
+        media_data: List to append to
+        filename: Name of file
+        file_path: Full path to file
+    """
+    thumbnail = extract_thumbnail(file_path, MEDIA_TYPE_IMAGE)
+    if thumbnail:
+        media_data.append({
+            'name': filename,
+            'path': file_path,
+            'thumbnail': thumbnail,
+            'type': MEDIA_TYPE_IMAGE
+        })
 
 
 class RequestMethodsHandler:
@@ -152,8 +316,47 @@ class RequestMethodsHandler:
         if request_type == REQUEST_GET_ALL_VIDEOS_GRID:
             return self.get_videos_display_data()
 
+        if request_type == REQUEST_GET_MEDIA:
+            l1 = self.get_media_data()
+            request_data = ({
+                "type": 'RES_GET_MEDIA',
+                "payload": l1
+            })
+            return request_data
+
         # Unknown
         return self._create_error_response(MESSAGE_UNKNOWN_REQUEST)
+
+
+    def get_media_data(self) -> list:
+        """
+        Collect information about all media files in folder.
+
+        Returns:
+            List of dictionaries with media information:
+                - name: filename
+                - path: full path
+                - thumbnail: base64 encoded preview
+                - type: 'image' or 'video'
+        """
+        media_data = []
+
+        # Scan folder for media files
+        for file in os.listdir("stories"):
+            file_lower = file.lower()
+            file_path = os.path.join("stories", file)
+
+            # Check if it's a video
+            if file_lower.endswith(VIDEO_EXTENSIONS):
+                _add_video_to_list(media_data, file, file_path)
+
+            # Check if it's an image
+            elif file_lower.endswith(IMAGE_EXTENSIONS):
+                _add_image_to_list(media_data, file, file_path)
+
+        return media_data
+
+
 
     def handle_play_video(self, payload: dict) -> dict:
         """

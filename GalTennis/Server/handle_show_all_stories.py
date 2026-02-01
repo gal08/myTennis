@@ -9,6 +9,8 @@ import os
 import cv2
 import base64
 from pathlib import Path
+from Protocol import Protocol
+import key_exchange
 
 DEFAULT_MEDIA_FOLDER = "stories"
 DEFAULT_PORT = 2222
@@ -61,10 +63,14 @@ class MediaServer:
         self.port = port
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.bind((DEFAULT_HOST, self.port))
+        #temp_conn = (self.sock, None)
+        #key = key_exchange.KeyExchange.send_recv_key(temp_conn)
+        #self.conn = (self.sock, key)
 
         # Supported file extensions
         self.video_extensions = VIDEO_EXTENSIONS
         self.image_extensions = IMAGE_EXTENSIONS
+        self.conn = (0, 0)
 
     def extract_thumbnail(self, file_path: str, file_type: str):
         """
@@ -276,11 +282,15 @@ class MediaServer:
         Args:
             client: Client socket connection
         """
+
+        temp_conn = (self.sock, None)
+        key = key_exchange.KeyExchange.send_recv_key(temp_conn)
+        self.conn = (self.sock, key)
         # Receive request
-        request = client.recv(RECEIVE_BUFFER_SIZE).decode(ENCODING_FORMAT)
+        response_data = Protocol.recv(self.conn)
 
         # Process request
-        if request == REQUEST_GET_MEDIA:
+        if response_data.get('type') == "GET_MEDIA":
             self._send_media_list(client)
 
     def _send_media_list(self, client: socket.socket):
@@ -292,10 +302,13 @@ class MediaServer:
         """
         # Collect media data
         media_data = self.get_media_data()
-
-        # Send response
-        response = json.dumps(media_data, ensure_ascii=ENSURE_ASCII_DISABLED)
-        client.sendall(response.encode(ENCODING_FORMAT))
+        print("iiii")
+        print(media_data)
+        request_data = json.dumps({
+            "type": 'RES_GET_MEDIA',
+            "payload": media_data
+        })
+        Protocol.send(request_data, self.conn)
 
         # Log statistics
         self._log_media_stats(media_data)

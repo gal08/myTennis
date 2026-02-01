@@ -296,19 +296,15 @@ class UnifiedFeedFrame(wx.Frame):
 
     def _fetch_stories_from_server(self):
         """Fetch stories from thumbnail server."""
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((SERVER_IP, STORY_THUMBNAIL_PORT))
-        sock.sendall("GET_MEDIA".encode('utf-8'))
+        response = self.client._send_request(
+            'GET_MEDIA',
+            {}
+        )
+        print("_fetch_stories_from_server")
+        print(response.get('payload'))
+        #return json.loads(response.get('payload'))
+        return response.get('payload')
 
-        response = b""
-        while True:
-            chunk = sock.recv(RECV_BUFFER_SIZE)
-            if not chunk:
-                break
-            response += chunk
-        sock.close()
-
-        return json.loads(response.decode('utf-8'))
 
     def _create_story_card(self, parent, story):
         """Create a story thumbnail card."""

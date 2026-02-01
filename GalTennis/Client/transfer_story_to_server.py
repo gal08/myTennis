@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import key_exchange
 import aes_cipher
+from Protocol import Protocol
 
 
 # Network Configuration
@@ -64,6 +65,11 @@ class MediaClient:
         """
         self.host = host
         self.port = port
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.connect((self.host, self.port))
+        temp_conn = (self.socket, None)
+        key = key_exchange.KeyExchange.send_recv_key(temp_conn)
+        self.conn = (self.socket, key)
 
     def send_media(self, file_path, username=DEFAULT_USERNAME):
         """
@@ -97,7 +103,7 @@ class MediaClient:
 
         # Send to server with encryption
         response = self._send_to_server_encrypted(payload_bytes)
-        print(f"ðŸ”’ Server response: {response}")
+        print(f"Server response: {response}")
 
     def _load_file(self, file_path):
         """
@@ -172,50 +178,13 @@ class MediaClient:
         Returns:
             str: Server response message
         """
-        # Open TCP connection
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.connect((self.host, self.port))
-
-        try:
-            # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
-            print("Performing key exchange...")
-            temp_conn = (s, None)
-            encryption_key = key_exchange.KeyExchange.send_recv_key(temp_conn)
-            encrypted_conn = (s, encryption_key)
-            print(
-                "Encryption established (key length: "
-                f"{len(encryption_key)} bytes)"
-            )
-            # Encrypt the payload
-            encrypted_payload = aes_cipher.AESCipher.encrypt(
-                encryption_key,
-                payload_bytes
-            )
-
-            # Send encrypted payload size
-            self._send_payload_size(s, len(encrypted_payload))
-
-            # Send encrypted payload
-            s.sendall(encrypted_payload)
-            print(f"Sent encrypted payload ({len(encrypted_payload)} bytes)")
-
-            # Read server response
-            response = s.recv(MSG_LEN).decode()
-            return response
-
-        finally:
-            s.close()
-
-    def _send_payload_size(self, sock, size):
-        """
-        Send payload size as 4-byte network-endian integer.
-
-        Args:
-            sock: Socket to send on
-            size: Size in bytes
-        """
-        size_bytes = struct.pack(PAYLOAD_SIZE_FORMAT, size)
-        sock.send(size_bytes)
+        request_data = json.dumps({
+            "type": 'TRANSFER_STORY',
+            "payload": {payload_bytes}
+        })
+        Protocol.send(request_data, self.conn)
+        response_data = Protocol.recv(self.conn)
+        return response_data
 
 
 def run(file_path, username=DEFAULT_USERNAME):

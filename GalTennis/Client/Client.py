@@ -123,6 +123,10 @@ class Client:
             traceback.print_exc()
             return {"status": "error", "message": f"Network Error: {e}"}
 
+    """def receive_request(self):
+        response_data = Protocol.recv(self.conn)
+        return response_data"""
+
     def on_story_post_callback(self, caption, media_type, media_data):
         """
         Callback for posting a story from the camera - REFACTORED.
@@ -217,7 +221,9 @@ class Client:
 
         try:
             import transfer_story_to_server
+            print("enter story server")
             transfer_story_to_server.run(file_name, self.username)
+            print("finishhhhh")
 
             time.sleep(TWO_SECOND_PAUSE)
             self.verify_story_uploaded(file_name)
@@ -250,7 +256,9 @@ class Client:
             bool: True if story found, False otherwise
         """
         for i in range(ATTEMPTS_LIMIT):
+            print("enter to got stories")
             response = self._send_request('GET_STORIES', {})
+            print("finish")
 
             if response.get('status') == 'success':
                 stories = response.get('stories', [])
