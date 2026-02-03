@@ -336,31 +336,39 @@ class VideoInteractionFrame(wx.Frame):
 
         self.comments_preview.SetValue(preview_text.strip())
 
+
     def on_play(self, event):
         """
-        Play the video.
+        Play the video with improved timing and user feedback.
 
         Args:
             event: wx.Event
         """
         print(f"Playing video: {self.video['title']}")
 
-        # Request server to start streaming
-        response = self.client._send_request('PLAY_VIDEO', {
-            'video_title': self.video['title']
-        })
+        # Show loading dialog
+        loading = wx.BusyInfo("Starting video server, please wait...")
+        wx.SafeYield()
 
-        if response.get('status') == 'success':
-            time.sleep(2)  # Wait for server to start
-            run_video_player_client()
-        else:
-            wx.MessageBox(
-                f"Failed to play video: "
-                f"{response.get('message', 'Unknown error')}",
-                "Error",
-                wx.OK | wx.ICON_ERROR,
-            )
+        try:
+            # Request server to start streaming
+            response = self.client._send_request('PLAY_VIDEO', {
+                'video_title': self.video['title']
+            })
 
+            if response.get('status') == 'success':
+                # Wait longer for server to fully initialize
+                time.sleep(3)  # Increased from 2 to 3 seconds
+                run_video_player_client()
+            else:
+                wx.MessageBox(
+                    f"Failed to play video: "
+                    f"{response.get('message', 'Unknown error')}",
+                    "Error",
+                    wx.OK | wx.ICON_ERROR,
+                )
+        finally:
+            del loading  # Close loading dialog
     def on_like(self, event):
         """
         Toggle like status for this video.

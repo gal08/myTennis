@@ -3,6 +3,7 @@ Gal Haham
 Video grid panel for displaying video thumbnails.
 Shows videos in a scrollable grid layout with metadata.
 REFACTORED: Separated class, all constants added, methods split.
+FIXED: Proper socket buffer handling with size header protocol
 """
 import time
 import wx
@@ -10,6 +11,7 @@ import socket
 import json
 import base64
 import io
+import struct
 from Video_Player_Client import run_video_player_client
 from VideoInteractionFrame import VideoInteractionFrame
 
@@ -37,6 +39,8 @@ SCROLL_RATE_Y = 20
 
 # Network
 RECV_BUFFER_SIZE = 4096
+SOCKET_TIMEOUT_SECONDS = 30
+NETWORK_HEADER_LENGTH_BYTES = 8
 
 # Colors
 COLOR_PANEL_BACKGROUND = wx.Colour(240, 240, 240)
@@ -57,6 +61,7 @@ class VideoGridPanel(wx.Panel):
     - Handle video selection
 
     REFACTORED: All magic numbers replaced with constants.
+    FIXED: Proper socket protocol with size headers
     """
 
     def __init__(self, parent, client_ref):
@@ -129,6 +134,8 @@ class VideoGridPanel(wx.Panel):
 
         except Exception as e:
             self._show_error(f"Error connecting to server: {e}")
+            import traceback
+            traceback.print_exc()
 
     def _request_video_server_start(self):
         """
@@ -152,40 +159,185 @@ class VideoGridPanel(wx.Panel):
         """
         Connect to thumbnail server and fetch video data.
 
+        Protocol:
+        1. Send "GET_VIDEOS_MEDIA" request
+        2. Receive 8-byte size header (big-endian unsigned int)
+        3. Receive JSON data of that size
+
         Returns:
             list: Video data with thumbnails
         """
-        # Connect to video thumbnail server
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.connect((SERVER_IP, VIDEO_THUMBNAIL_PORT))
+        sock = None
+        try:
+            # Connect to video thumbnail server
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(SOCKET_TIMEOUT_SECONDS)
 
-        # Send request
-        sock.sendall("GET_VIDEOS_MEDIA".encode('utf-8'))
+            print(
+                f"[DEBUG] Connecting to thumbnail server at "
+                f"{SERVER_IP}:{VIDEO_THUMBNAIL_PORT}..."
+            )
+            sock.connect((SERVER_IP, VIDEO_THUMBNAIL_PORT))
+            print("[DEBUG] Connected!")
 
-        # Receive response
-        response = self._receive_full_response(sock)
-        sock.close()
+            # Send request
+            request = "GET_VIDEOS_MEDIA".encode('utf-8')
+            print(f"[DEBUG] Sending request: {request.decode('utf-8')}")
+            sock.sendall(request)
 
-        # Decode and return
-        return json.loads(response.decode('utf-8'))
+            # Receive response with proper protocol
+            print("[DEBUG] Waiting for response size header...")
+            response = self._receive_full_response_with_size(sock)
 
-    def _receive_full_response(self, sock):
+            print(f"[DEBUG] Received {len(response)} bytes of JSON data")
+
+            # Decode and return
+            video_data = json.loads(response.decode('utf-8'))
+            print(f"[DEBUG] Parsed {len(video_data)} videos from server")
+
+            return video_data
+
+        except socket.timeout:
+            raise TimeoutError(
+                f"Timeout connecting to thumbnail server at "
+                f"{SERVER_IP}:{VIDEO_THUMBNAIL_PORT}"
+            )
+        except ConnectionRefusedError:
+            raise ConnectionError(
+                f"Connection refused by thumbnail server at "
+                f"{SERVER_IP}:{VIDEO_THUMBNAIL_PORT}. "
+                f"Is the server running?"
+            )
+        except Exception as e:
+            print(f"[ERROR] Exception in _fetch_videos_from_thumbnail_server: {e}")
+            raise
+        finally:
+            if sock:
+                try:
+                    sock.close()
+                    print("[DEBUG] Socket closed")
+                except:
+                    pass
+
+    def _receive_full_response_with_size(self, sock):
         """
-        Receive complete response from socket.
+        Receive complete response with size header protocol.
+
+        Protocol:
+        1. Read 8-byte big-endian unsigned int (size header)
+        2. Read exactly that many bytes of data
+
+        This ensures we get complete messages without truncation.
 
         Args:
             sock: Socket to receive from
 
         Returns:
             bytes: Complete response data
+
+        Raises:
+            ConnectionError: If connection is lost before receiving all data
+        """
+        # Step 1: Receive size header (8 bytes)
+        print("[DEBUG] Reading size header (8 bytes)...")
+        size_header = self._recv_exact(sock, NETWORK_HEADER_LENGTH_BYTES)
+
+        if not size_header:
+            raise ConnectionError(
+                "Connection closed before receiving size header"
+            )
+
+        # Unpack size (big-endian unsigned int)
+        data_size = struct.unpack("!L", size_header)[0]
+        print(f"[DEBUG] Size header indicates {data_size} bytes incoming")
+
+        # Step 2: Receive exactly that many bytes
+        print(f"[DEBUG] Reading {data_size} bytes of data...")
+        data = self._recv_exact(sock, data_size)
+
+        if not data or len(data) != data_size:
+            raise ConnectionError(
+                f"Failed to receive complete data. "
+                f"Expected {data_size} bytes, got {len(data) if data else 0}"
+            )
+
+        print(f"[DEBUG] Successfully received {len(data)} bytes")
+        return data
+
+    def _receive_full_response(self, sock):
+        """
+        Legacy method - Receive complete response from socket.
+
+        WARNING: This method is deprecated because it doesn't use
+        size headers and can receive incomplete messages.
+        Use _receive_full_response_with_size() instead.
+
+        Args:
+            sock: Socket to receive from
+
+        Returns:
+            bytes: Response data (may be incomplete!)
         """
         response = b""
-        while True:
-            chunk = sock.recv(RECV_BUFFER_SIZE)
-            if not chunk:
-                break
-            response += chunk
+        sock.settimeout(SOCKET_TIMEOUT_SECONDS)
+
+        try:
+            while True:
+                chunk = sock.recv(RECV_BUFFER_SIZE)
+                if not chunk:
+                    break
+                response += chunk
+        except socket.timeout:
+            # Timeout is expected when all data received
+            pass
+
         return response
+
+    def _recv_exact(self, sock, num_bytes):
+        """
+        Receive an exact number of bytes from socket.
+
+        This is critical for network protocols because recv() may
+        return fewer bytes than requested, even if more data is available.
+
+        Args:
+            sock: Socket to receive from
+            num_bytes: Exact number of bytes to receive
+
+        Returns:
+            bytes: Exactly num_bytes of data, or empty bytes if connection closed
+
+        Raises:
+            ConnectionError: If socket closes before receiving all bytes
+        """
+        data = b''
+
+        while len(data) < num_bytes:
+            try:
+                chunk = sock.recv(num_bytes - len(data))
+
+                if not chunk:
+                    # Connection closed
+                    if len(data) > 0:
+                        print(
+                            f"[WARNING] Connection closed after {len(data)} "
+                            f"bytes, expected {num_bytes}"
+                        )
+                    return data
+
+                data += chunk
+                print(
+                    f"[DEBUG] Received {len(chunk)} bytes "
+                    f"(total: {len(data)}/{num_bytes})"
+                )
+
+            except socket.timeout:
+                raise ConnectionError(
+                    f"Socket timeout while receiving {num_bytes} bytes. "
+                    f"Got {len(data)} so far."
+                )
+
+        return data
 
     def display_media(self):
         """Display videos in grid."""
@@ -242,24 +394,35 @@ class VideoGridPanel(wx.Panel):
         Returns:
             wx.StaticBitmap: Thumbnail widget
         """
-        # Decode base64 image
-        img_data = base64.b64decode(media_item['thumbnail'])
-        img_stream = io.BytesIO(img_data)
-        img = wx.Image(img_stream)
+        try:
+            # Decode base64 image
+            img_data = base64.b64decode(media_item['thumbnail'])
+            img_stream = io.BytesIO(img_data)
+            img = wx.Image(img_stream)
 
-        # Resize to standard size
-        img = img.Scale(THUMBNAIL_SIZE, THUMBNAIL_SIZE, wx.IMAGE_QUALITY_HIGH)
-        bitmap = wx.Bitmap(img)
+            # Resize to standard size
+            img = img.Scale(
+                THUMBNAIL_SIZE,
+                THUMBNAIL_SIZE,
+                wx.IMAGE_QUALITY_HIGH
+            )
+            bitmap = wx.Bitmap(img)
 
-        # Create clickable bitmap
-        img_ctrl = wx.StaticBitmap(parent, bitmap=bitmap)
-        img_ctrl.Bind(
-            wx.EVT_LEFT_DCLICK,
-            lambda evt: self.on_video_double_click(media_item)
-        )
-        img_ctrl.SetCursor(wx.Cursor(wx.CURSOR_HAND))
+            # Create clickable bitmap
+            img_ctrl = wx.StaticBitmap(parent, bitmap=bitmap)
+            img_ctrl.Bind(
+                wx.EVT_LEFT_DCLICK,
+                lambda evt: self.on_video_double_click(media_item)
+            )
+            img_ctrl.SetCursor(wx.Cursor(wx.CURSOR_HAND))
 
-        return img_ctrl
+            return img_ctrl
+
+        except Exception as e:
+            print(f"[ERROR] Failed to create thumbnail: {e}")
+            # Return placeholder if thumbnail fails
+            placeholder = wx.StaticText(parent, label="[Image Error]")
+            return placeholder
 
     def _create_title_label(self, parent, media_item):
         """
@@ -272,7 +435,7 @@ class VideoGridPanel(wx.Panel):
         Returns:
             wx.StaticText: Title label
         """
-        label_text = media_item['name']
+        label_text = media_item.get('name', 'Unknown')
 
         label = wx.StaticText(parent, label=label_text)
         label.SetFont(
@@ -338,8 +501,8 @@ class VideoGridPanel(wx.Panel):
         Args:
             media_item: Video data dictionary
         """
-        video_title = media_item['name']
-        print(f"Opening interaction for: {video_title}")
+        video_title = media_item.get('name', 'Unknown')
+        print(f"[DEBUG] Opening interaction for: {video_title}")
 
         # Prepare video data
         video_data = {
@@ -347,7 +510,7 @@ class VideoGridPanel(wx.Panel):
             'category': media_item.get('category', 'N/A'),
             'level': media_item.get('level', 'N/A'),
             'uploader': media_item.get('uploader', 'Unknown'),
-            'path': media_item['path']
+            'path': media_item.get('path', '')
         }
 
         # Open interaction window after current event

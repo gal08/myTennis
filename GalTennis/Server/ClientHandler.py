@@ -1,78 +1,75 @@
 """
 Gal Haham
-Client Handler - ENCRYPTED VERSION
+Client Handler
 Manages individual client streaming sessions with encryption
-ENHANCED: Now supports encrypted connections (socket, key) tuple
+FIXED: Direct socket communication WITHOUT NetworkManager dependency
+FIXED: Now uses Protocol.send() for consistency with client
 """
 import time
+import pickle
+import struct
+import aes_cipher
 from VideoStreamManager import VideoStreamManager
 from AudioStreamManager import AudioStreamManager
-from NetworkManager import NetworkManager
+from Protocol import Protocol
 
 INITIAL_FRAME_COUNT = 0
 FRAME_INCREMENT_STEP = 1
 SOCK_INDEX = 0
 KEY_INDEX = 1
+STRUCT_FORMAT_LONG = "!L"
 
 
 class ClientHandler:
-    """
-    Handles streaming to a single client with encryption:
-    - Coordinates video and audio streaming
-    - Manages synchronization between video frames and audio chunks
-    - Handles client disconnection and cleanup
-    - Supports encrypted connections
-    """
 
-    def __init__(self, video_path, encrypted_conn, address):
-        """
-        Initialize client handler with encrypted connection.
-
-        Args:
-            video_path: Path to video file
-            encrypted_conn: Tuple of (socket, encryption_key)
-            address: Client address
-        """
+    def __init__(self, video_path, encrypted_conn, address, client_number=0):
         self.video_path = video_path
-        self.encrypted_conn = encrypted_conn  # (socket, key)
+        self.encrypted_conn = encrypted_conn
         self.client_socket = encrypted_conn[SOCK_INDEX]
         self.encryption_key = encrypted_conn[KEY_INDEX]
         self.address = address
+        self.client_number = client_number
 
         self.video_manager = VideoStreamManager(video_path)
         self.audio_manager = AudioStreamManager(video_path)
 
     def handle_streaming(self):
-        """Main method to orchestrate the streaming process."""
         try:
-            # 1. Setup Video
+            print(f"[Client #{self.client_number}] === STARTING STREAMING ===")
+
+            print(f"[Client #{self.client_number}] Step 1: Opening video...")
             if not self.video_manager.open_video():
-                print(f"Failed to open video for client {self.address}")
-                NetworkManager.close_client_socket(self.client_socket)
+                print(f"[Client #{self.client_number}] ❌ Failed to open video")
+                self._close_socket()
                 return
 
             video_info = self.video_manager.get_video_info()
+            print(f"[Client #{self.client_number}] ✅ Video opened: {video_info['width']}x{video_info['height']}")
 
-            # 2. Setup Audio
+            print(f"[Client #{self.client_number}] Step 2: Setting up audio...")
             self.audio_manager.setup_audio_extraction(video_info['fps'])
+            print(f"[Client #{self.client_number}] ✅ Audio setup complete")
 
-            # 3. Send Stream Info (Handshake) - ENCRYPTED
+            print(f"[Client #{self.client_number}] Step 3: Sending stream info...")
             self._send_handshake(video_info)
+            print(f"[Client #{self.client_number}] ✅ Stream info sent")
 
-            # 4. Main Streaming Loop - ENCRYPTED
+            print(f"[Client #{self.client_number}] Step 4: Starting frame streaming...")
             self._stream_loop(video_info)
+            print(f"[Client #{self.client_number}] ✅ Streaming completed")
 
-        except (ConnectionResetError, BrokenPipeError):
-            print(f"Client {self.address} disconnected")
+        except (ConnectionResetError, BrokenPipeError) as e:
+            print(f"[Client #{self.client_number}] Client disconnected: {e}")
         except Exception as e:
-            print(f"Error with client {self.address}: {e}")
+            print(f"[Client #{self.client_number}] ❌ Error: {e}")
             import traceback
             traceback.print_exc()
         finally:
+            print(f"[Client #{self.client_number}] Cleaning up...")
             self._cleanup()
+            print(f"[Client #{self.client_number}] === STREAMING ENDED ===")
 
     def _send_handshake(self, video_info):
-        """Sends initial stream information to the client - ENCRYPTED."""
         audio_info = self.audio_manager.get_audio_info()
 
         stream_info = {
@@ -86,38 +83,72 @@ class ClientHandler:
             'has_audio': audio_info['has_audio']
         }
 
-        # Send encrypted stream info
-        NetworkManager.send_stream_info_encrypted(
-            self.encrypted_conn,
-            stream_info
-        )
+        print(f"[Client #{self.client_number}] Preparing to send stream info...")
+        print(f"[Client #{self.client_number}] Stream info: {stream_info}")
 
-        print(f"Streaming to {self.address} (ENCRYPTED)")
+        try:
+            self._send_stream_info_encrypted(stream_info)
+            print(f"[Client #{self.client_number}] ✅ Stream info successfully sent!")
+        except Exception as e:
+            print(f"[Client #{self.client_number}] ❌ Failed to send stream info: {e}")
+            raise
+
+        print(f"[Client #{self.client_number}] Streaming to {self.address} (ENCRYPTED)")
         print(
-            f"   Video: {video_info['width']}x{video_info['height']} "
-            f"@ {video_info['fps']: .2f} FPS"
+            f"[Client #{self.client_number}]    Video: {video_info['width']}x{video_info['height']} "
+            f"@ {video_info['fps']:.2f} FPS"
         )
         print(
-            f"   Audio: {audio_info['audio_sample_rate']} Hz, "
+            f"[Client #{self.client_number}]    Audio: {audio_info['audio_sample_rate']} Hz, "
             f"{audio_info['audio_channels']} ch"
         )
 
+    def _send_stream_info_encrypted(self, stream_info: dict):
+        info_data = pickle.dumps(stream_info)
+
+        if self.encryption_key:
+            encrypted_data = aes_cipher.AESCipher.encrypt(
+                self.encryption_key,
+                info_data
+            )
+        else:
+            encrypted_data = info_data
+
+        Protocol.send_bin(encrypted_data, self.encrypted_conn)
+
+    def _send_frame_packet(self, frame, audio_chunk, frame_number):
+        packet = {
+            'frame': frame,
+            'audio': audio_chunk,
+            'frame_number': frame_number
+        }
+
+        packet_data = pickle.dumps(packet)
+
+        if self.encryption_key:
+            encrypted_data = aes_cipher.AESCipher.encrypt(
+                self.encryption_key,
+                packet_data
+            )
+        else:
+            encrypted_data = packet_data
+
+        Protocol.send_bin(encrypted_data, self.encrypted_conn)
+
     def _stream_loop(self, video_info):
-        """Main loop for streaming video and audio frames - ENCRYPTED."""
-        # Initialize streaming state
         streaming_state = self._initialize_streaming_state(video_info)
 
-        # Main streaming loop
-        while True:
-            # Process one frame
-            if not self._process_single_frame(streaming_state):
-                break  # End of stream
+        print(f"[Client #{self.client_number}] Starting frame loop...")
 
-            # Update frame counter
+        while True:
+            if not self._process_single_frame(streaming_state):
+                break
+
             streaming_state['frame_count'] += FRAME_INCREMENT_STEP
 
+        print(f"[Client #{self.client_number}] Frame loop completed")
+
     def _initialize_streaming_state(self, video_info):
-        """Initialize all state variables needed for streaming."""
         return {
             'frame_count': INITIAL_FRAME_COUNT,
             'start_time': time.time(),
@@ -126,59 +157,40 @@ class ClientHandler:
         }
 
     def _process_single_frame(self, state):
-        """
-        Process and send a single frame with audio - ENCRYPTED.
-        Returns True if successful, False if stream ended.
-        """
         frame_start = time.time()
 
-        # Read video frame
         ret, frame = self._read_video_frame()
         if not ret:
             self._print_stream_completion(state['frame_count'])
             return False
 
-        # Read audio chunk
         audio_chunk = self._read_audio_chunk()
 
-        # Send packet to client - ENCRYPTED
-        self._send_frame_packet(frame, audio_chunk, state['frame_count'])
+        try:
+            self._send_frame_packet(frame, audio_chunk, state['frame_count'])
+        except Exception as e:
+            print(f"[Client #{self.client_number}] Error sending frame {state['frame_count']}: {e}")
+            return False
 
-        # Log progress
         self._log_streaming_progress(state)
 
-        # Control frame rate
         self._control_frame_timing(frame_start, state['frame_delay'])
 
         return True
 
     def _read_video_frame(self):
-        """Read the next video frame from video manager."""
         return self.video_manager.read_frame()
 
     def _read_audio_chunk(self):
-        """Read the next audio chunk from audio manager."""
         return self.audio_manager.read_audio_chunk()
 
-    def _send_frame_packet(self, frame, audio_chunk, frame_number):
-        """Create and send an ENCRYPTED packet containing frame and audio."""
-        packet = {
-            'frame': frame,
-            'audio': audio_chunk,
-            'frame_number': frame_number
-        }
-        # Send encrypted packet
-        NetworkManager.send_packet_encrypted(self.encrypted_conn, packet)
-
     def _print_stream_completion(self, frame_count):
-        """Print completion message when stream ends."""
         print(
-            f"Finished streaming to {self.address} "
+            f"[Client #{self.client_number}] Finished streaming to {self.address} "
             f"({frame_count} frames)"
         )
 
     def _log_streaming_progress(self, state):
-        """Log progress periodically during streaming."""
         VideoStreamManager.log_progress(
             state['frame_count'],
             state['total_frames'],
@@ -187,12 +199,23 @@ class ClientHandler:
         )
 
     def _control_frame_timing(self, frame_start, frame_delay):
-        """Control frame rate to maintain consistent timing."""
         VideoStreamManager.control_frame_rate(frame_start, frame_delay)
 
+    def _close_socket(self):
+        if self.client_socket:
+            try:
+                self.client_socket.close()
+            except Exception as e:
+                print(f"[Client #{self.client_number}] Error closing socket: {e}")
+
     def _cleanup(self):
-        """Releases all resources for this client."""
+        print(f"[Client #{self.client_number}] Closing video manager...")
         self.video_manager.close()
+
+        print(f"[Client #{self.client_number}] Closing audio manager...")
         self.audio_manager.close()
-        NetworkManager.close_client_socket(self.client_socket)
-        print(f"Connection closed: {self.address}")
+
+        print(f"[Client #{self.client_number}] Closing socket...")
+        self._close_socket()
+
+        print(f"[Client #{self.client_number}] Connection closed: {self.address}")

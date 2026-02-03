@@ -1,15 +1,13 @@
 """
 Gal Haham
 Request Methods Handler
-Centralized request routing and handling logic extracted from Server.py
-This module handles all business logic for request processing.
+Centralized request routing and handling logic
+Handles video and story streaming with encryption
 """
-import base64
-import json
-import os
-import time
 import threading
-
+import time
+import os
+import base64
 import cv2
 
 from Authication import Authentication
@@ -21,7 +19,6 @@ from Manger_commands import ManagerCommands
 from Video_Player_Server import run_video_player_server
 from story_player_server import run_story_player_server
 
-# Request type constants
 REQUEST_LOGIN = 'LOGIN'
 REQUEST_SIGNUP = 'SIGNUP'
 REQUEST_ADD_VIDEO = 'ADD_VIDEO'
@@ -40,7 +37,6 @@ REQUEST_GET_IMAGES_OF_ALL_VIDEOS = 'GET_IMAGES_OF_ALL_VIDEOS'
 REQUEST_GET_ALL_VIDEOS_GRID = 'GET_ALL_VIDEOS_GRID'
 REQUEST_GET_MEDIA = 'GET_MEDIA'
 
-# Response keys
 KEY_TYPE = 'type'
 KEY_PAYLOAD = 'payload'
 KEY_VIDEO_TITLE = 'video_title'
@@ -48,11 +44,9 @@ KEY_FILENAME = 'filename'
 KEY_STATUS = 'status'
 KEY_MESSAGE = 'message'
 
-# Status values
 STATUS_SUCCESS = "success"
 STATUS_ERROR = "error"
 
-# Messages
 MESSAGE_UNKNOWN_REQUEST = "Unknown request"
 MESSAGE_VIDEO_NOT_PROVIDED = "Video title not provided"
 MESSAGE_VIDEO_NOT_FOUND = "Video not found"
@@ -67,14 +61,11 @@ MESSAGE_VIDEOS_DISPLAYED = "Video grid display server started"
 MESSAGE_STORY_STREAMING_STARTED = "Story streaming started"
 MESSAGE_FILE_NOT_FOUND = "Story file not found"
 
-# Folder paths
 VIDEO_FOLDER = "videos"
 STORY_FOLDER = "stories"
 
-# Timing
 STARTUP_DELAY_SECONDS = 1
 
-# Server configuration
 DEFAULT_HOST = '0.0.0.0'
 VIDEO_STREAM_PORT = 9999
 
@@ -93,18 +84,8 @@ MEDIA_TYPE_VIDEO = 'video'
 
 
 def _resize_to_thumbnail(img):
-    """
-    Resize image to thumbnail size while maintaining aspect ratio.
-
-    Args:
-        img: OpenCV image array
-
-    Returns:
-        Resized image
-    """
     height, width = img.shape[:IMAGE_SHAPE_SLICE_2D]
 
-    # Calculate new dimensions
     if height > width:
         new_height = THUMBNAIL_MAX_SIZE
         new_width = int(width * (THUMBNAIL_MAX_SIZE / height))
@@ -116,50 +97,20 @@ def _resize_to_thumbnail(img):
 
 
 def _encode_image_to_base64(img) -> str:
-    """
-    Encode image to base64 string.
-
-    Args:
-        img: OpenCV image array
-
-    Returns:
-        Base64 encoded string
-    """
     _, buffer = cv2.imencode(JPEG_EXTENSION, img)
     return base64.b64encode(buffer).decode(ENCODING_FORMAT)
 
 
 def _extract_image_thumbnail(file_path: str):
-    """
-    Extract thumbnail from image file.
-
-    Args:
-        file_path: Path to image file
-
-    Returns:
-        Base64 encoded thumbnail or None
-    """
     img = cv2.imread(file_path)
     if img is None:
         return None
 
-    # Resize image
     resized_img = _resize_to_thumbnail(img)
-
-    # Encode to base64
     return _encode_image_to_base64(resized_img)
 
 
 def _extract_video_thumbnail(file_path: str):
-    """
-    Extract first frame from video as thumbnail.
-
-    Args:
-        file_path: Path to video file
-
-    Returns:
-        Base64 encoded thumbnail or None
-    """
     cap = cv2.VideoCapture(file_path)
     ret, frame = cap.read()
     cap.release()
@@ -171,17 +122,6 @@ def _extract_video_thumbnail(file_path: str):
 
 
 def extract_thumbnail(file_path: str, file_type: str):
-    """
-    Extract preview thumbnail from media file.
-    REFACTORED: Split into separate methods for images and videos.
-
-    Args:
-        file_path: Path to media file
-        file_type: Type of media ('image' or 'video')
-
-    Returns:
-        Base64 encoded thumbnail or None if extraction failed
-    """
     if file_type == MEDIA_TYPE_IMAGE:
         return _extract_image_thumbnail(file_path)
     elif file_type == MEDIA_TYPE_VIDEO:
@@ -189,20 +129,7 @@ def extract_thumbnail(file_path: str, file_type: str):
     return None
 
 
-
-def _add_video_to_list(
-        media_data: list,
-        filename: str,
-        file_path: str
-):
-    """
-    Add video to media list if thumbnail extraction succeeds.
-
-    Args:
-        media_data: List to append to
-        filename: Name of file
-        file_path: Full path to file
-    """
+def _add_video_to_list(media_data: list, filename: str, file_path: str):
     thumbnail = extract_thumbnail(file_path, MEDIA_TYPE_VIDEO)
     if thumbnail:
         media_data.append({
@@ -213,19 +140,7 @@ def _add_video_to_list(
         })
 
 
-def _add_image_to_list(
-        media_data: list,
-        filename: str,
-        file_path: str
-):
-    """
-    Add image to media list if thumbnail extraction succeeds.
-
-    Args:
-        media_data: List to append to
-        filename: Name of file
-        file_path: Full path to file
-    """
+def _add_image_to_list(media_data: list, filename: str, file_path: str):
     thumbnail = extract_thumbnail(file_path, MEDIA_TYPE_IMAGE)
     if thumbnail:
         media_data.append({
@@ -237,17 +152,8 @@ def _add_image_to_list(
 
 
 class RequestMethodsHandler:
-    """
-    Centralized handler for all server request types.
-
-    This class contains all the business logic for processing
-    different types of requests, keeping the Server class clean
-    and focused on network operations.
-    """
 
     def __init__(self):
-        """Initialize all request handlers."""
-        # Initialize handlers
         self.auth_handler = Authentication()
         self.videos_handler = VideosHandler()
         self.likes_handler = LikesHandler()
@@ -255,51 +161,39 @@ class RequestMethodsHandler:
         self.stories_handler = StoriesHandler()
         self.manager_commands = ManagerCommands()
 
-        # Tracking for story upload server
         self.story_upload_server_running = False
         self.story_upload_server_thread = None
 
+        self.active_video_servers = {}
+        self.video_servers_lock = threading.Lock()
+
     def route_request(self, request_data: dict) -> dict:
-        """
-        Route request to appropriate handler.
-
-        Args:
-            request_data: Request dictionary
-
-        Returns:
-            Response dictionary
-        """
         request_type = request_data.get(KEY_TYPE)
         payload = request_data.get(KEY_PAYLOAD, {})
 
-        # Authentication
+        print(f"[ROUTER] Routing request type: {request_type}")
+
         if request_type in [REQUEST_LOGIN, REQUEST_SIGNUP]:
             return self.auth_handler.handle_request(request_type, payload)
 
-        # Videos
         if request_type in [REQUEST_ADD_VIDEO, REQUEST_GET_VIDEOS]:
             return self.videos_handler.handle_request(request_type, payload)
 
-        # Likes
         if request_type in [REQUEST_LIKE_VIDEO, REQUEST_GET_LIKES_COUNT]:
             return self.likes_handler.handle_request(request_type, payload)
 
-        # Comments
         if request_type in [REQUEST_ADD_COMMENT, REQUEST_GET_COMMENTS]:
             return self.comments_handler.handle_request(request_type, payload)
 
-        # Stories
         if request_type == REQUEST_ADD_STORY:
             return self.handle_add_story(payload)
 
         if request_type == REQUEST_GET_STORIES:
             return self.stories_handler.handle_request(request_type, payload)
 
-        # Manager
         if request_type == REQUEST_GET_ALL_USERS:
             return self.manager_commands.handle_request(request_type, payload)
 
-        # Playback
         if request_type == REQUEST_PLAY_VIDEO:
             return self.handle_play_video(payload)
 
@@ -309,7 +203,6 @@ class RequestMethodsHandler:
         if request_type == REQUEST_PLAY_STORY_MEDIA:
             return self.handle_play_story_media(payload)
 
-        # Display
         if request_type == REQUEST_GET_IMAGES_OF_ALL_VIDEOS:
             return self.get_stories_display_data()
 
@@ -318,97 +211,99 @@ class RequestMethodsHandler:
 
         if request_type == REQUEST_GET_MEDIA:
             l1 = self.get_media_data()
-            request_data = ({
+            return {
                 "type": 'RES_GET_MEDIA',
                 "payload": l1
-            })
-            return request_data
+            }
 
-        # Unknown
         return self._create_error_response(MESSAGE_UNKNOWN_REQUEST)
 
-
     def get_media_data(self) -> list:
-        """
-        Collect information about all media files in folder.
-
-        Returns:
-            List of dictionaries with media information:
-                - name: filename
-                - path: full path
-                - thumbnail: base64 encoded preview
-                - type: 'image' or 'video'
-        """
         media_data = []
 
-        # Scan folder for media files
-        for file in os.listdir("stories"):
+        for file in os.listdir(STORY_FOLDER):
             file_lower = file.lower()
-            file_path = os.path.join("stories", file)
+            file_path = os.path.join(STORY_FOLDER, file)
 
-            # Check if it's a video
             if file_lower.endswith(VIDEO_EXTENSIONS):
                 _add_video_to_list(media_data, file, file_path)
 
-            # Check if it's an image
             elif file_lower.endswith(IMAGE_EXTENSIONS):
                 _add_image_to_list(media_data, file, file_path)
 
         return media_data
 
-
-
     def handle_play_video(self, payload: dict) -> dict:
-        """
-        Handle PLAY_VIDEO request.
-
-        Args:
-            payload: Request payload with video_title
-
-        Returns:
-            Response dictionary
-        """
-        import os
-
         video_title = payload.get(KEY_VIDEO_TITLE)
 
         if not video_title:
             return self._create_error_response(MESSAGE_VIDEO_NOT_PROVIDED)
 
-        video_path = os.path.join(VIDEO_FOLDER, video_title)
+        video_path = self._find_video_path(video_title)
 
-        if not os.path.exists(video_path):
+        if not video_path:
             return self._create_error_response(
                 f"{MESSAGE_VIDEO_NOT_FOUND}: {video_title}"
             )
 
+        print(f"[PLAY_VIDEO] Found video at: {video_path}")
+
+        with self.video_servers_lock:
+            if video_title in self.active_video_servers:
+                server_thread = self.active_video_servers[video_title]
+                if server_thread.is_alive():
+                    print(f"[PLAY_VIDEO] Video server already running")
+                    return {
+                        "status": "success",
+                        "message": "Video server already running",
+                        "port": 9999
+                    }
+
         try:
-            thread = threading.Thread(
-                target=run_video_player_server,
-                args=(video_path,),
-                daemon=True
+            def start_video_server():
+                try:
+                    print(f"[VIDEO SERVER] Starting for {video_title}...")
+                    run_video_player_server(video_path)
+                    print(f"[VIDEO SERVER] Finished for {video_title}")
+                except Exception as e:
+                    print(f"[VIDEO SERVER ERROR] {e}")
+                    import traceback
+                    traceback.print_exc()
+                finally:
+                    with self.video_servers_lock:
+                        if video_title in self.active_video_servers:
+                            del self.active_video_servers[video_title]
+
+            video_thread = threading.Thread(
+                target=start_video_server,
+                daemon=True,
+                name=f"VideoServer-{video_title}"
             )
-            thread.start()
+            video_thread.start()
 
-            return self._create_success_response(MESSAGE_VIDEO_STREAM_STARTED)
+            with self.video_servers_lock:
+                self.active_video_servers[video_title] = video_thread
 
+            print("[PLAY_VIDEO] Waiting for video server to initialize...")
+            time.sleep(2.5)
+
+            print("[PLAY_VIDEO] Video server started successfully")
+            return {
+                "status": "success",
+                "message": MESSAGE_VIDEO_STREAM_STARTED,
+                "port": 9999
+            }
+
+        except ImportError as e:
+            print(f"[PLAY_VIDEO ERROR] Import error: {e}")
+            return self._create_error_response(f"Video server module not found: {e}")
         except Exception as e:
-            return self._create_error_response(
-                f"{MESSAGE_VIDEO_STREAM_FAILED}: {e}"
-            )
+            print(f"[PLAY_VIDEO ERROR] {e}")
+            import traceback
+            traceback.print_exc()
+            return self._create_error_response(f"{MESSAGE_VIDEO_STREAM_FAILED}: {e}")
 
     def handle_play_story(self, payload: dict) -> dict:
-        """
-        Handle PLAY_STORY request (old mechanism).
-
-        Args:
-            payload: Request payload with filename
-
-        Returns:
-            Response dictionary
-        """
-        import os
-
         story_filename = payload.get(KEY_FILENAME)
 
         if not story_filename:
@@ -437,17 +332,6 @@ class RequestMethodsHandler:
             )
 
     def handle_play_story_media(self, payload: dict) -> dict:
-        """
-        Handle PLAY_STORY_MEDIA request (WX streaming version).
-
-        Args:
-            payload: Request payload with filename
-
-        Returns:
-            Response dictionary
-        """
-        import os
-
         filename = payload.get(KEY_FILENAME)
         story_path = os.path.join(STORY_FOLDER, filename)
 
@@ -480,29 +364,16 @@ class RequestMethodsHandler:
             return self._create_error_response(str(e))
 
     def get_stories_display_data(self) -> dict:
-        """Return success - stories server already running."""
         return self._create_success_response(MESSAGE_STORIES_DISPLAYED)
 
     def get_videos_display_data(self) -> dict:
-        """Return success - video server already running."""
         return self._create_success_response(MESSAGE_VIDEOS_DISPLAYED)
 
     def handle_add_story(self, payload: dict) -> dict:
-        """
-        Handle ADD_STORY request.
-
-        Args:
-            payload: Story data
-
-        Returns:
-            Response dictionary
-        """
-        # Ensure upload server is running
         if not self.story_upload_server_running:
             self.start_story_upload_server()
             time.sleep(STARTUP_DELAY_SECONDS)
 
-        # Process story metadata
         response = self.stories_handler.handle_request(
             REQUEST_ADD_STORY,
             payload
@@ -511,7 +382,6 @@ class RequestMethodsHandler:
         return response
 
     def start_story_upload_server(self):
-        """Start story upload server (port 3333)."""
         if not self.story_upload_server_running:
             import story_saver_server
 
@@ -530,26 +400,39 @@ class RequestMethodsHandler:
             self.story_upload_server_running = True
             time.sleep(0.5)
 
+    def _find_video_path(self, video_title: str) -> str:
+        VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']
+
+        if not os.path.exists(VIDEO_FOLDER):
+            print(f"[FIND VIDEO] Videos folder not found: {VIDEO_FOLDER}")
+            return None
+
+        for ext in VIDEO_EXTENSIONS:
+            video_path = os.path.join(VIDEO_FOLDER, f"{video_title}{ext}")
+            if os.path.exists(video_path):
+                print(f"[FIND VIDEO] Found: {video_path}")
+                return video_path
+
+            video_path = os.path.join(VIDEO_FOLDER, video_title)
+            if os.path.exists(video_path):
+                print(f"[FIND VIDEO] Found: {video_path}")
+                return video_path
+
+        try:
+            for filename in os.listdir(VIDEO_FOLDER):
+                if filename.lower().startswith(video_title.lower()):
+                    video_path = os.path.join(VIDEO_FOLDER, filename)
+                    if os.path.isfile(video_path):
+                        print(f"[FIND VIDEO] Found (fuzzy): {video_path}")
+                        return video_path
+        except Exception as e:
+            print(f"[FIND VIDEO ERROR] {e}")
+
+        print(f"[FIND VIDEO] Not found: {video_title}")
+        return None
+
     def _create_error_response(self, message: str) -> dict:
-        """
-        Create error response.
-
-        Args:
-            message: Error message
-
-        Returns:
-            Error response dictionary
-        """
         return {KEY_STATUS: STATUS_ERROR, KEY_MESSAGE: message}
 
     def _create_success_response(self, message: str) -> dict:
-        """
-        Create success response.
-
-        Args:
-            message: Success message
-
-        Returns:
-            Success response dictionary
-        """
         return {KEY_STATUS: STATUS_SUCCESS, KEY_MESSAGE: message}
