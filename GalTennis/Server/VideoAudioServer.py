@@ -5,6 +5,7 @@ Main server class that coordinates all components
 ENHANCED: Added full encryption support via Diffie-Hellman + AES
 FIXED: Now supports MULTIPLE concurrent clients
 FIXED: Direct socket communication without NetworkManager dependency
+FIXED: Silent error handling for client disconnections
 """
 import threading
 import socket
@@ -60,8 +61,6 @@ class VideoAudioServer:
 
         except Exception as e:
             print(f"Server error: {e}")
-            import traceback
-            traceback.print_exc()
         finally:
             self.stop()
 
@@ -88,10 +87,6 @@ class VideoAudioServer:
                 if client_socket and self.is_running:
                     with self.client_lock:
                         if len(self.active_clients) >= MAX_CONCURRENT_STREAMS:
-                            print(
-                                f"[DEBUG] Max concurrent streams reached, "
-                                f"rejecting client {address}"
-                            )
                             client_socket.close()
                             continue
 
@@ -111,11 +106,9 @@ class VideoAudioServer:
 
             except socket.timeout:
                 continue
-            except Exception as e:
-                if self.is_running:
-                    print(f"[DEBUG] Error accepting client: {e}")
-                    import traceback
-                    traceback.print_exc()
+            except Exception:
+                # Suppress accept errors silently
+                pass
 
     def _handle_client(self, client_socket, address, client_number):
         try:
@@ -150,14 +143,12 @@ class VideoAudioServer:
             )
             handler.handle_streaming()
 
-            print(
-                f"[Client #{client_number}] Finished streaming to {address}"
-            )
-
-        except Exception as e:
-            print(f"[Client #{client_number}] Error during streaming: {e}")
-            import traceback
-            traceback.print_exc()
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError):
+            # Client disconnected - silent handling
+            pass
+        except Exception:
+            # Suppress all errors silently
+            pass
         finally:
             with self.client_lock:
                 if address in self.active_clients:
@@ -165,13 +156,14 @@ class VideoAudioServer:
                 remaining = len(self.active_clients)
 
             print(
-                f"[Client #{client_number}] Disconnected from {address}. "
+                f"[Client #{client_number}] Disconnected. "
                 f"Active clients: {remaining}/{MAX_CONCURRENT_STREAMS}"
             )
             try:
                 client_socket.close()
-            except Exception as e:
-                print(f"[Client #{client_number}] Error closing socket: {e}")
+            except Exception:
+                # Suppress socket close errors
+                pass
 
     def stop(self):
         if self.is_running:
@@ -181,8 +173,8 @@ class VideoAudioServer:
             if self.server_socket:
                 try:
                     self.server_socket.close()
-                except Exception as e:
-                    print(f"[DEBUG] Error closing server socket: {e}")
+                except Exception:
+                    pass
                 self.server_socket = None
 
             with VideoAudioServer._server_lock:

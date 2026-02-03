@@ -1,11 +1,10 @@
 """
-Gal Haham
-Main Tennis Social server application.
-Routes client requests, manages handlers, and coordinates
-video/story streaming servers.
+Gal Haham Main Tennis Social server application.
+Routes client requests, manages handlers, and coordinates video/story streaming servers.
 REFACTORED: Constants extracted, methods split, brief docs.
 ENHANCED: Auto-starts thumbnail servers on startup!
 SIMPLIFIED: Business logic extracted to methods.py
+FIXED: Graceful handling of abrupt client disconnections
 """
 import socket
 import json
@@ -14,7 +13,6 @@ import time
 import os
 import key_exchange
 import aes_cipher
-
 from Protocol import Protocol
 from Methods import RequestMethodsHandler
 from handle_show_all_stories import run as run_stories_display_server
@@ -31,17 +29,13 @@ MAX_PENDING_CONNECTIONS = 5
 SOCKET_REUSE_ADDRESS = 1
 SOCK = 0
 KEY = 1
-
 VIDEO_FOLDER = "videos"
 STORY_FOLDER = "stories"
-
 HALF_SECOND = 0.5
 SEPARATOR_LENGTH = 50
 SEPARATOR_CHAR = "="
-
 JSON_START_CHAR = '{'
 NOT_FOUND_INDEX = -1
-
 KEY_TYPE = 'type'
 KEY_PAYLOAD = 'payload'
 KEY_STATUS = 'status'
@@ -71,11 +65,11 @@ class Server:
         # Ensure folders
         os.makedirs(VIDEO_FOLDER, exist_ok=True)
         os.makedirs(STORY_FOLDER, exist_ok=True)
+
         self._create_server_socket()
 
     def start(self):
         """Start the main TCP server."""
-        # self._create_server_socket()
         self._print_startup_banner()
 
         # Start auxiliary servers
@@ -114,7 +108,7 @@ class Server:
         print(separator)
         print("Tennis Social Server")
         print(separator)
-        print(f"Main Server: {self.host}: {self.port}")
+        print(f"Main Server: {self.host}:{self.port}")
         print(separator)
         print("Server is ready and waiting for clients...")
         print(separator)
@@ -123,25 +117,36 @@ class Server:
         """Main server loop - accept and handle clients."""
         print("[DEBUG] Server loop started, waiting for connections...")
         while self.running:
-            print("[DEBUG] Waiting for client to connect...")
-            client_socket, addr = self.server_socket.accept()
+            try:
+                print("[DEBUG] Waiting for client to connect...")
+                client_socket, addr = self.server_socket.accept()
+                print(f"\n{'=' * 60}")
+                print(f"NEW CLIENT CONNECTED: {addr}")
+                print(f"{'=' * 60}\n")
 
-            print(f"\n{'=' * 60}")
-            print(f"NEW CLIENT CONNECTED: {addr}")
-            print(f"{'=' * 60}\n")
-
-            client_thread = threading.Thread(
-                target=self.handle_client,
-                args=(client_socket,),
-                daemon=True
-            )
-            client_thread.start()
-            print(f"[DEBUG] Started thread for client {addr}")
+                client_thread = threading.Thread(
+                    target=self.handle_client,
+                    args=(client_socket, addr),
+                    daemon=True
+                )
+                client_thread.start()
+                print(f"[DEBUG] Started thread for client {addr}")
+            except OSError:
+                # Server socket closed
+                if not self.running:
+                    break
+                continue
+            except Exception as e:
+                print(f"[ERROR] Error accepting client: {e}")
+                continue
 
     def stop(self):
         """Stop the server."""
         self.running = False
-        self.server_socket.close()
+        try:
+            self.server_socket.close()
+        except:
+            pass
         print("\nServer stopped.")
 
     def start_video_thumbnail_server(self):
@@ -187,105 +192,146 @@ class Server:
             self.story_thumbnail_server_running = True
             time.sleep(HALF_SECOND)
 
-    def handle_client(self, client_socket: socket.socket):
+    def handle_client(self, client_socket: socket.socket, addr: tuple):
         """
-        Handle client connection - DEBUG VERSION
-        """
-        print(f"\n[THREAD] handle_client() started")
+        Handle client connection with graceful error handling.
 
+        Args:
+            client_socket: Client socket
+            addr: Client address tuple
+        """
+        print(f"\n[THREAD {addr}] handle_client() started")
         conn = (client_socket, None)
-        print(f"[THREAD] Starting key exchange...")
-        key = key_exchange.KeyExchange.recv_send_key(conn)
-        print("[THREAD] key =", key, "len =", len(key))
-        conn = (client_socket, key)
 
         try:
-            print(f"[THREAD] Entering request loop...")
+            # Key exchange
+            print(f"[THREAD {addr}] Starting key exchange...")
+            key = key_exchange.KeyExchange.recv_send_key(conn)
+            print(f"[THREAD {addr}] Key exchange completed, key length: {len(key)}")
+            conn = (client_socket, key)
+
+            # Request loop
+            print(f"[THREAD {addr}] Entering request loop...")
             while True:
                 print(f"\n{'=' * 60}")
-                print(f"SERVER: Waiting for request...")
+                print(f"[{addr}] Waiting for request...")
                 print(f"{'=' * 60}")
 
-                request_data = self._receive_request(conn)
+                # Receive request (with error handling)
+                request_data = self._receive_request(conn, addr)
                 if not request_data:
-                    print(f"No request data received")
+                    print(f"[{addr}] Client disconnected (no data)")
                     break
 
-                print(f"Received request: ")
-                print(f"Type: {request_data.get('type')}")
-                print(f"Payload: {request_data.get('payload')}")
+                print(f"[{addr}] Received request type: {request_data.get('type')}")
 
-                # Route request using methods handler
-                print(f"\nRouting to methods_handler...")
+                # Route request
                 response = self.methods_handler.route_request(request_data)
+                print(f"[{addr}] Handler returned response")
 
-                print(f"Got response from handler: ")
-                print(f"   {response}")
+                # Send response (with error handling)
+                if not self._send_response(conn, response, addr):
+                    print(f"[{addr}] Failed to send response, client likely disconnected")
+                    break
 
-                # Send response
-                print(f"\nSending response to client...")
-                self._send_response(conn, response)
-                print(f"Response sent!")
+                print(f"[{addr}] Response sent successfully")
                 print(f"{'=' * 60}\n")
 
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            print(f"[{addr}] Client disconnected abruptly")
+        except OSError as e:
+            # Handles WinError, socket errors, etc.
+            if e.errno in (10053, 10054, 104, 32):  # Common disconnection errors
+                print(f"[{addr}] Client connection lost")
+            else:
+                print(f"[{addr}] Socket error: {e}")
         except Exception as e:
-            print(f"[ERROR] Client handling: {e}")
+            print(f"[{addr}] Unexpected error: {e}")
             import traceback
             traceback.print_exc()
-            self._send_error_response(client_socket, str(e))
-
         finally:
-            client_socket.close()
-            print(f"Client disconnected")
+            # Clean close
+            self._close_client_socket(client_socket, addr)
 
-    def _receive_request(self, conn) -> dict:
+    def _receive_request(self, conn, addr) -> dict:
         """
-        Receive and parse client request.
+        Receive and parse client request with error handling.
 
         Args:
-            client_socket: Client socket
+            conn: Connection tuple (socket, key)
+            addr: Client address for logging
 
         Returns:
-            Parsed request dictionary or None
-        """
-        data_raw = Protocol.recv(conn)
-        if not data_raw:
-            return None
-
-        # Find JSON start
-        start_index = data_raw.find(JSON_START_CHAR)
-        if start_index == NOT_FOUND_INDEX:
-            raise ValueError("Invalid JSON received")
-
-        # Parse JSON
-        data_json = data_raw[start_index:].strip()
-        return json.loads(data_json)
-
-    def _send_response(self, conn, response: dict):
-        """
-        Send response to client.
-
-        Args:
-            client_socket: Client socket
-            response: Response dictionary
-        """
-        Protocol.send(json.dumps(response), conn)
-
-    def _send_error_response(self, client_socket: socket.socket, error: str):
-        """
-        Send error response to client.
-
-        Args:
-            client_socket: Client socket
-            error: Error message
+            Parsed request dictionary or None if client disconnected
         """
         try:
-            Protocol.send(
-                client_socket,
-                json.dumps({KEY_STATUS: "error", KEY_MESSAGE: error})
-            )
+            data_raw = Protocol.recv(conn)
+            if not data_raw:
+                return None
+
+            # Find JSON start
+            start_index = data_raw.find(JSON_START_CHAR)
+            if start_index == NOT_FOUND_INDEX:
+                print(f"[{addr}] Invalid JSON received")
+                return None
+
+            # Parse JSON
+            data_json = data_raw[start_index:].strip()
+            return json.loads(data_json)
+
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            return None
+        except OSError:
+            return None
+        except json.JSONDecodeError:
+            print(f"[{addr}] JSON decode error")
+            return None
+        except Exception as e:
+            print(f"[{addr}] Error receiving request: {e}")
+            return None
+
+    def _send_response(self, conn, response: dict, addr) -> bool:
+        """
+        Send response to client with error handling.
+
+        Args:
+            conn: Connection tuple (socket, key)
+            response: Response dictionary
+            addr: Client address for logging
+
+        Returns:
+            True if sent successfully, False if client disconnected
+        """
+        try:
+            Protocol.send(json.dumps(response), conn)
+            return True
+        except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
+            return False
+        except OSError:
+            return False
+        except Exception as e:
+            print(f"[{addr}] Error sending response: {e}")
+            return False
+
+    def _close_client_socket(self, client_socket: socket.socket, addr):
+        """
+        Safely close client socket.
+
+        Args:
+            client_socket: Socket to close
+            addr: Client address for logging
+        """
+        try:
+            client_socket.shutdown(socket.SHUT_RDWR)
         except:
             pass
+
+        try:
+            client_socket.close()
+        except:
+            pass
+
+        print(f"[{addr}] Connection closed")
 
 
 if __name__ == '__main__':

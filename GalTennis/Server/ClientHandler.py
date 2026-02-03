@@ -4,6 +4,7 @@ Client Handler
 Manages individual client streaming sessions with encryption
 FIXED: Direct socket communication WITHOUT NetworkManager dependency
 FIXED: Now uses Protocol.send() for consistency with client
+FIXED: Silent error handling for client disconnections
 """
 import time
 import pickle
@@ -39,35 +40,29 @@ class ClientHandler:
 
             print(f"[Client #{self.client_number}] Step 1: Opening video...")
             if not self.video_manager.open_video():
-                print(f"[Client #{self.client_number}] ❌ Failed to open video")
                 self._close_socket()
                 return
 
             video_info = self.video_manager.get_video_info()
-            print(f"[Client #{self.client_number}] ✅ Video opened: {video_info['width']}x{video_info['height']}")
+            print(f"[Client #{self.client_number}] Video opened: {video_info['width']}x{video_info['height']}")
 
             print(f"[Client #{self.client_number}] Step 2: Setting up audio...")
             self.audio_manager.setup_audio_extraction(video_info['fps'])
-            print(f"[Client #{self.client_number}] ✅ Audio setup complete")
 
             print(f"[Client #{self.client_number}] Step 3: Sending stream info...")
             self._send_handshake(video_info)
-            print(f"[Client #{self.client_number}] ✅ Stream info sent")
 
             print(f"[Client #{self.client_number}] Step 4: Starting frame streaming...")
             self._stream_loop(video_info)
-            print(f"[Client #{self.client_number}] ✅ Streaming completed")
 
-        except (ConnectionResetError, BrokenPipeError) as e:
-            print(f"[Client #{self.client_number}] Client disconnected: {e}")
-        except Exception as e:
-            print(f"[Client #{self.client_number}] ❌ Error: {e}")
-            import traceback
-            traceback.print_exc()
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError):
+            # Client disconnected - silent handling (no error messages)
+            pass
+        except Exception:
+            # Suppress all other errors silently
+            pass
         finally:
-            print(f"[Client #{self.client_number}] Cleaning up...")
             self._cleanup()
-            print(f"[Client #{self.client_number}] === STREAMING ENDED ===")
 
     def _send_handshake(self, video_info):
         audio_info = self.audio_manager.get_audio_info()
@@ -84,13 +79,12 @@ class ClientHandler:
         }
 
         print(f"[Client #{self.client_number}] Preparing to send stream info...")
-        print(f"[Client #{self.client_number}] Stream info: {stream_info}")
 
         try:
             self._send_stream_info_encrypted(stream_info)
-            print(f"[Client #{self.client_number}] ✅ Stream info successfully sent!")
-        except Exception as e:
-            print(f"[Client #{self.client_number}] ❌ Failed to send stream info: {e}")
+            print(f"[Client #{self.client_number}] Stream info successfully sent!")
+        except Exception:
+            # Suppress send errors
             raise
 
         print(f"[Client #{self.client_number}] Streaming to {self.address} (ENCRYPTED)")
@@ -168,8 +162,8 @@ class ClientHandler:
 
         try:
             self._send_frame_packet(frame, audio_chunk, state['frame_count'])
-        except Exception as e:
-            print(f"[Client #{self.client_number}] Error sending frame {state['frame_count']}: {e}")
+        except Exception:
+            # Suppress send errors
             return False
 
         self._log_streaming_progress(state)
@@ -205,17 +199,19 @@ class ClientHandler:
         if self.client_socket:
             try:
                 self.client_socket.close()
-            except Exception as e:
-                print(f"[Client #{self.client_number}] Error closing socket: {e}")
+            except Exception:
+                # Suppress socket close errors
+                pass
 
     def _cleanup(self):
-        print(f"[Client #{self.client_number}] Closing video manager...")
-        self.video_manager.close()
+        try:
+            self.video_manager.close()
+        except Exception:
+            pass
 
-        print(f"[Client #{self.client_number}] Closing audio manager...")
-        self.audio_manager.close()
+        try:
+            self.audio_manager.close()
+        except Exception:
+            pass
 
-        print(f"[Client #{self.client_number}] Closing socket...")
         self._close_socket()
-
-        print(f"[Client #{self.client_number}] Connection closed: {self.address}")
