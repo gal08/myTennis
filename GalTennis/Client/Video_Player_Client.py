@@ -1,56 +1,66 @@
 """
 Gal Haham
-Video & audio streaming client - Main Entry Point
-FIXED: Prevents multiple video players from running simultaneously
+Video Player Client - Main Entry Point
+REFACTORED: Single-port design. Requires a ticket from the server so
+            VideoAudioClient knows which video to request.
 """
 import threading
 from Video_Audio_Client import VideoAudioClient
 
-# Server configuration
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 9999
 
-# Global variable to track if a video is already playing
 _current_player_thread = None
 _player_lock = threading.Lock()
 
 
-def run_video_player_client(host=DEFAULT_HOST, port=DEFAULT_PORT):
+def run_video_player_client(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    ticket: str = "",
+):
     """
-    Run the video player client - connects directly to stream without GUI.
-    Ensures only ONE video plays at a time.
+    Launch video player in a background thread.
+    Only one player runs at a time - call again after closing the current one.
+
+    Args:
+        host:   Server IP address
+        port:   Server port (always 9999 now)
+        ticket: One-time ticket string returned by PLAY_VIDEO response
     """
     global _current_player_thread
 
     with _player_lock:
-        # Check if a video is already playing
         if _current_player_thread and _current_player_thread.is_alive():
-            print("Video already playing! Close current video first.")
+            print("[PlayerClient] Video already playing - close current window first")
             return
 
-        def play_in_background():
-            client = VideoAudioClient(host, port)
-            if client.connect():
-                print("Connected to video stream")
-                client.play_stream()
-            else:
-                print("Failed to connect to video stream")
+        def _play():
+            try:
+                client = VideoAudioClient(host, port, ticket=ticket)
+                if client.connect():
+                    print("[PlayerClient] Connected, starting playback...")
+                    client.play_stream()
+                else:
+                    print("[PlayerClient] Failed to connect to video server")
+            except ConnectionError as e:
+                print(f"[PlayerClient] Connection error: {e}")
+            except Exception as e:
+                print(f"[PlayerClient] Unexpected error: {e}")
 
-        # Start playback in a new thread
         _current_player_thread = threading.Thread(
-            target=play_in_background,
+            target=_play,
             daemon=False,
             name="VideoPlayerThread"
         )
         _current_player_thread.start()
-        print("Video player started")
+        print("[PlayerClient] Video player started")
 
 
 if __name__ == '__main__':
-    run_video_player_client()
-
-    # Keep main thread alive
     import time
+    # For standalone testing, provide a ticket manually
+    run_video_player_client(ticket="testticket"[:8])
     try:
         print("Press Ctrl+C to exit...")
         while True:

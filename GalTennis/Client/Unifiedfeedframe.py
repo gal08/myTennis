@@ -302,9 +302,8 @@ class UnifiedFeedFrame(wx.Frame):
         )
         print("_fetch_stories_from_server")
         print(response.get('payload'))
-        #return json.loads(response.get('payload'))
+        # return json.loads(response.get('payload'))
         return response.get('payload')
-
 
     def _create_story_card(self, parent, story):
         """Create a story thumbnail card."""
@@ -353,8 +352,25 @@ class UnifiedFeedFrame(wx.Frame):
             })
 
             if response.get('status') == 'success':
-                time.sleep(2)
-                run_story_player_client()
+                port = response.get('port')
+                ticket = response.get('ticket', '')
+
+                if not port or not ticket:
+                    wx.MessageBox(
+                        "Server did not return streaming info.",
+                        "Error",
+                        wx.OK | wx.ICON_ERROR
+                    )
+                    return
+
+                print(f"[UnifiedFeed] Connecting port={port} ticket={ticket}")
+                run_story_player_client(host=SERVER_IP, port=port, ticket=ticket)
+            else:
+                wx.MessageBox(
+                    f"Failed to play story: {response.get('message', 'Unknown error')}",
+                    "Error",
+                    wx.OK | wx.ICON_ERROR
+                )
         except Exception as e:
             wx.MessageBox(
                 f"Error playing story: {str(e)}",

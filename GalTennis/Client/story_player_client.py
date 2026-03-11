@@ -1,36 +1,33 @@
 """
 Gal Haham
-Client for receiving and playing stories from remote server - ENCRYPTED VERSION
-Handles video frames with synchronized audio playback using OpenCV and PyAudio
-ENHANCED: Added full encryption support via Diffie-Hellman + AES
+Story player client - ENCRYPTED + COMPRESSED
+REFACTORED: Single-port design. Client sends an 8-byte ticket immediately
+            after TCP connect so the server knows which story to stream.
+Pipeline: send ticket → recv accept byte → key exchange → recv frames
+          recv_bin → AES.decrypt → zlib.decompress → pickle.loads → display
 """
 import socket
 import cv2
 import pickle
-import struct
+import zlib
 import pyaudio
 import numpy as np
 import key_exchange
 import aes_cipher
-
+from Protocol import Protocol
 
 STORY_SERVER_HOST = "127.0.0.1"
 STORY_SERVER_PORT = 6001
 
 FRAME_INCREMENT = 1
 MODULO_SUCCESS = 0
-FPS_RATE = 30
-MESSAGE_LENGTH_FIELD_SIZE = 4
-FIRST_UNPACKED_INDEX = 0
-STARTING_COUNT = 0
-DISPLAY_INDEX_OFFSET = 1
+FPS_RATE = 20
 FRAME_DELAY_MS = 1
 KEY_ESCAPE = 27
 IS_WINDOW_VISIBLE = 1
 SOCK_INDEX = 0
 KEY_INDEX = 1
 
-# Positions
 TEXT_INFO_X = 10
 TEXT_INFO_Y = 30
 TEXT_AUDIO_STATUS_X = 10
@@ -38,147 +35,136 @@ TEXT_AUDIO_STATUS_Y = 60
 TEXT_INSTRUCTIONS_X = 10
 TEXT_INSTRUCTIONS_Y_OFFSET = 20
 
-# Font Sizes
 FONT_SIZE_INFO = 0.7
 FONT_SIZE_AUDIO = 0.6
 FONT_SIZE_INSTRUCTIONS = 0.6
-
-# Line Thickness
 LINE_THICKNESS = 2
 
-# Colors (BGR format for OpenCV)
 COLOR_WHITE = (255, 255, 255)
 COLOR_GREEN = (0, 255, 0)
 COLOR_RED = (0, 0, 255)
 COLOR_YELLOW = (255, 255, 0)
 
+TICKET_ACCEPT  = b'\x01'
+TICKET_REJECT  = b'\x00'
+TICKET_LENGTH  = 8
+
 
 class StoryPlayer:
     """
-    StoryPlayer is responsible for receiving and playing a recorded story
-    from a remote server with FULL ENCRYPTION.
-
-    Responsibilities:
-    - Connect to the story server over TCP with encryption
-    - Receive ENCRYPTED story metadata (resolution, FPS, audio, total frames)
-    - Initialize video and audio playback pipelines
-    - Receive and DECRYPT story packets (video frame + optional audio chunk)
-    - Display frames using OpenCV and play synchronized audio with PyAudio
-    - Support skipping, disconnecting, and cleanup of resources
+    Receive-only story player.
+    Sends ticket on connect, then:
+    Pipeline: Protocol.recv_bin → AES.decrypt → zlib.decompress → pickle.loads
     """
 
-    def __init__(self, host=STORY_SERVER_HOST, port=STORY_SERVER_PORT):
-        """
-        Initialize the story player.
-
-        Args:
-            host: Server hostname/IP address
-            port: Server port number
-        """
+    def __init__(
+        self,
+        host: str = STORY_SERVER_HOST,
+        port: int = STORY_SERVER_PORT,
+        ticket: str = "",
+    ):
         self.host = host
         self.port = port
+        self.ticket = ticket
         self.socket = None
-        self.encrypted_conn = None  # (socket, encryption_key)
+        self.conn = None            # (socket, encryption_key)
         self.story_info = None
         self.audio_stream = None
         self.pyaudio_instance = None
 
-    def connect(self):
-        """
-        Connect to server, establish encryption, and receive story metadata.
+    # ── Connection ─────────────────────────────────────────────────────────────
 
-        Returns:
-            bool: True if connection successful, False otherwise
-        """
+    def connect(self) -> bool:
         try:
-            print(f"Connecting to server {self.host}: {self.port}...")
+            print(f"[StoryClient] Connecting to {self.host}:{self.port}...")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.connect((self.host, self.port))
-            print(f"Connected to server")
+            print("[StoryClient] Connected")
 
-            # ðŸ”’ ENCRYPTION: Perform Diffie-Hellman key exchange
-            print("Performing key exchange...")
+            # Send ticket and verify acceptance
+            self._send_ticket_and_verify()
+
+            # Key exchange - client role (send then receive)
             temp_conn = (self.socket, None)
-            encryption_key = key_exchange.KeyExchange.send_recv_key(temp_conn)
-            self.encrypted_conn = (self.socket, encryption_key)
-            print(
-                "Encryption established (key length: "
-                f"{len(encryption_key)} bytes)"
-            )
-            # Receive encrypted story info
-            if not self._receive_story_info():
+            key = key_exchange.KeyExchange.send_recv_key(temp_conn)
+            self.conn = (self.socket, key)
+            print(f"[StoryClient] Encryption ready ({len(key)} bytes)")
+
+            # Receive story metadata
+            self.story_info = self._recv_decrypt_decompress()
+            if not self.story_info:
+                print("[StoryClient] Failed to receive story info")
                 return False
 
-            # Initialize audio if available
-            if self.story_info['has_audio']:
+            self._print_story_info()
+
+            if self.story_info.get('has_audio'):
                 self._initialize_audio()
 
             return True
 
         except Exception as e:
-            print(f"Connection error: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[StoryClient] Connection error: {e}")
             if self.socket:
                 self.socket.close()
             return False
 
-    def _receive_story_info(self):
+    def _send_ticket_and_verify(self):
+        """Send the 8-byte ticket and check the server's accept/reject byte."""
+        if not self.ticket:
+            raise ValueError("[StoryClient] No ticket provided")
+
+        # Pad / truncate to exactly TICKET_LENGTH bytes
+        ticket_bytes = self.ticket.encode("utf-8")[:TICKET_LENGTH].ljust(TICKET_LENGTH, b'\x00')
+        self.socket.sendall(ticket_bytes)
+
+        # Wait for server ack
+        ack = self._recv_exact(self.socket, 1)
+        if ack != TICKET_ACCEPT:
+            self.socket.close()
+            raise ConnectionError(f"[StoryClient] Server rejected ticket '{self.ticket}'")
+        print(f"[StoryClient] Ticket '{self.ticket}' accepted")
+
+    @staticmethod
+    def _recv_exact(sock: socket.socket, n: int) -> bytes:
+        data = b""
+        while len(data) < n:
+            chunk = sock.recv(n - len(data))
+            if not chunk:
+                return b""
+            data += chunk
+        return data
+
+    # ── Core receive pipeline ─────────────────────────────────────────────────
+
+    def _recv_decrypt_decompress(self):
         """
-        Receive and parse ENCRYPTED story metadata from server.
-
-        Returns:
-            bool: True if successful, False otherwise
+        Protocol.recv_bin → AES.decrypt → zlib.decompress → pickle.loads
         """
-        # Receive info size
-        info_size_data = self._recv_all(MESSAGE_LENGTH_FIELD_SIZE)
-        if not info_size_data:
-            raise ConnectionError("Failed to receive story info size")
-
-        info_size = (
-            struct.unpack("!L", info_size_data)[FIRST_UNPACKED_INDEX]
-        )
-
-        # Receive encrypted info data
-        encrypted_info_data = self._recv_all(info_size)
-        if not encrypted_info_data:
-            raise ConnectionError("Failed to receive story info data")
-
-        # Decrypt the story info
-        encryption_key = self.encrypted_conn[KEY_INDEX]
         try:
-            decrypted_data = aes_cipher.AESCipher.decrypt(
-                encryption_key,
-                encrypted_info_data
-            )
-            self.story_info = pickle.loads(decrypted_data)
+            raw = Protocol.recv_bin(self.conn)
+            if not raw:
+                return None
+
+            key = self.conn[KEY_INDEX]
+            data = raw if isinstance(raw, bytes) else raw.encode()
+            if key:
+                data = aes_cipher.AESCipher.decrypt(key, data)
+
+            try:
+                data = zlib.decompress(data)
+            except zlib.error:
+                pass    # Fallback: not compressed
+
+            return pickle.loads(data)
+
         except Exception as e:
-            print(f"Failed to decrypt story info: {e}")
-            return False
+            print(f"[StoryClient] Receive error: {e}")
+            return None
 
-        self._print_story_info()
-
-        return True
-
-    def _print_story_info(self):
-        """Print received story information to console."""
-        print(f"Encrypted Story info received: ")
-        print(f"   Type: {self.story_info['type']}")
-        print(
-            f"   Video: {self.story_info['width']}x"
-            f"{self.story_info['height']}"
-        )
-        print(f"   FPS: {self.story_info['fps']: .2f}")
-        print(f"   Total frames: {self.story_info['total_frames']}")
-        print(f"   Has Audio: {self.story_info['has_audio']}")
+    # ── Audio ──────────────────────────────────────────────────────────────────
 
     def _initialize_audio(self):
-        """
-        Initialize PyAudio stream for playback.
-
-        Sets up audio output stream with parameters from story metadata.
-        If initialization fails, disables audio for this story.
-        """
         try:
             self.pyaudio_instance = pyaudio.PyAudio()
             self.audio_stream = self.pyaudio_instance.open(
@@ -188,291 +174,127 @@ class StoryPlayer:
                 output=True,
                 frames_per_buffer=self.story_info['samples_per_frame']
             )
-            print(f"Audio initialized and ready!")
-            print(f"   Sample rate: {self.story_info['audio_sample_rate']} Hz")
-            print(f"   Channels: {self.story_info['audio_channels']}")
+            print("[StoryClient] Audio ready")
         except Exception as e:
-            print(f"Audio initialization failed: {e}")
+            print(f"[StoryClient] Audio init failed: {e}")
             self.story_info['has_audio'] = False
 
-    def _recv_all(self, size):
-        """
-        Receive exact number of bytes from socket.
-
-        Args:
-            size: Number of bytes to receive
-
-        Returns:
-            bytes: Received data, or None if connection closed
-        """
-        data = b''
-        while len(data) < size:
-            packet = self.socket.recv(size - len(data))
-            if not packet:
-                return None
-            data += packet
-        return data
-
-    def _receive_packet(self):
-        """
-        Receive one ENCRYPTED packet (frame + audio) from server.
-
-        Returns:
-            dict: Packet containing 'frame' and 'audio', or None if error
-        """
-        try:
-            # Get packet size
-            packet_size_data = self._recv_all(MESSAGE_LENGTH_FIELD_SIZE)
-            if not packet_size_data:
-                return None
-
-            packet_size = (
-                struct.unpack("!L", packet_size_data)[FIRST_UNPACKED_INDEX]
-            )
-
-            # Get encrypted packet data
-            encrypted_packet_data = self._recv_all(packet_size)
-            if not encrypted_packet_data:
-                return None
-
-            # ðŸ”’ Decrypt the packet
-            encryption_key = self.encrypted_conn[KEY_INDEX]
-            try:
-                decrypted_data = aes_cipher.AESCipher.decrypt(
-                    encryption_key,
-                    encrypted_packet_data
-                )
-                packet = pickle.loads(decrypted_data)
-                return packet
-            except Exception as e:
-                print(f"Failed to decrypt packet: {e}")
-                return None
-
-        except Exception as e:
-            print(f"Error receiving packet: {e}")
-            return None
+    # ── Playback ───────────────────────────────────────────────────────────────
 
     def play_story(self):
-        """
-        Main playback loop - displays video and plays audio.
-        All data is ENCRYPTED during transmission.
-        """
         if not self.story_info:
-            print("No story info available")
+            print("[StoryClient] No story info")
             return
 
-        # Setup window
-        window_name = self._setup_playback_window()
+        win = f"Story - {self.story_info['type']}"
+        cv2.namedWindow(win, cv2.WINDOW_NORMAL)
+        cv2.resizeWindow(win, self.story_info['width'], self.story_info['height'])
 
-        # Main playback loop
-        frame_count = STARTING_COUNT
-        print(f"Playing ENCRYPTED {self.story_info['type']} story...")
+        frame_count = 0
+        print(f"[StoryClient] Playing {self.story_info['type']} story...")
 
         while True:
-            # Receive encrypted packet
-            packet = self._receive_packet()
+            packet = self._recv_decrypt_decompress()
             if packet is None:
-                print("Story ended")
+                print("[StoryClient] Story ended")
                 break
 
-            # Process and display frame
             frame = packet['frame']
-            self._add_overlay_text(frame, frame_count)
-            cv2.imshow(window_name, frame)
+            self._add_overlay(frame, frame_count)
+            cv2.imshow(win, frame)
 
-            # Play audio
-            self._play_audio_chunk(packet)
+            if self.audio_stream and packet.get('audio') is not None:
+                try:
+                    self.audio_stream.write(packet['audio'].tobytes())
+                except Exception:
+                    pass
 
-            # Update counter and print progress
             frame_count += FRAME_INCREMENT
-            self._print_progress(frame_count)
 
-            # Check for user input or window close
-            if self._check_exit_conditions(window_name):
+            if frame_count % FPS_RATE == MODULO_SUCCESS:
+                print(f"[StoryClient] Frame {frame_count}/{self.story_info['total_frames']}")
+
+            key = cv2.waitKey(FRAME_DELAY_MS) & 0xFF
+            if key == KEY_ESCAPE or key == ord('q') or key == ord('Q'):
+                print("[StoryClient] Skipped by user")
                 break
 
-        # Cleanup
+            try:
+                if cv2.getWindowProperty(win, cv2.WND_PROP_VISIBLE) < IS_WINDOW_VISIBLE:
+                    print("[StoryClient] Window closed")
+                    break
+            except Exception:
+                break
+
         cv2.destroyAllWindows()
         self.cleanup()
-        print(f"Playback finished ({frame_count} frames)")
+        print(f"[StoryClient] Done ({frame_count} frames)")
 
-    def _setup_playback_window(self):
-        """
-        Setup OpenCV window for story playback.
+    # ── Overlay text ───────────────────────────────────────────────────────────
 
-        Returns:
-            str: Window name
-        """
-        window_name = f"ðŸ”’ Encrypted Story - {self.story_info['type']}"
-        cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(
-            window_name,
-            self.story_info['width'],
-            self.story_info['height']
-        )
-        return window_name
-
-    def _add_overlay_text(self, frame, frame_count):
-        """
-        Add overlay text to frame (info, audio status, instructions).
-
-        Args:
-            frame: OpenCV frame to add text to
-            frame_count: Current frame number
-        """
-        # Frame info with encryption indicator
-        self._add_frame_info_text(frame, frame_count)
-
-        # Audio status
-        self._add_audio_status_text(frame)
-
-        # Instructions
-        self._add_instructions_text(frame)
-
-    def _add_frame_info_text(self, frame, frame_count):
-        """
-        Add frame counter and type info to top of frame.
-
-        Args:
-            frame: OpenCV frame
-            frame_count: Current frame number
-        """
-        info_text = (
-            f"{self.story_info['type']} | "
-            f"Frame: {frame_count + DISPLAY_INDEX_OFFSET}/"
-            f"{self.story_info['total_frames']}"
-        )
-
+    def _add_overlay(self, frame, frame_count: int):
         cv2.putText(
             frame,
-            info_text,
+            f"{self.story_info['type']} | Frame {frame_count + 1}/{self.story_info['total_frames']}",
             (TEXT_INFO_X, TEXT_INFO_Y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            FONT_SIZE_INFO,
-            COLOR_WHITE,
-            LINE_THICKNESS
+            cv2.FONT_HERSHEY_SIMPLEX, FONT_SIZE_INFO, COLOR_WHITE, LINE_THICKNESS
         )
-
-    def _add_audio_status_text(self, frame):
-        """
-        Add audio status indicator to frame.
-
-        Args:
-            frame: OpenCV frame
-        """
-        # Determine status and color
-        has_audio = self.story_info['has_audio'] and self.audio_stream
-        audio_status = "Audio: ON" if has_audio else "Audio: OFF"
-        color = COLOR_GREEN if has_audio else COLOR_RED
-
+        has_audio = self.story_info.get('has_audio') and self.audio_stream
         cv2.putText(
             frame,
-            audio_status,
+            "Audio: ON" if has_audio else "Audio: OFF",
             (TEXT_AUDIO_STATUS_X, TEXT_AUDIO_STATUS_Y),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            FONT_SIZE_AUDIO,
-            color,
-            LINE_THICKNESS
+            cv2.FONT_HERSHEY_SIMPLEX, FONT_SIZE_AUDIO,
+            COLOR_GREEN if has_audio else COLOR_RED, LINE_THICKNESS
         )
-
-    def _add_instructions_text(self, frame):
-        """
-        Add user instructions to bottom of frame.
-
-        Args:
-            frame: OpenCV frame
-        """
-        y_position = self.story_info['height'] - TEXT_INSTRUCTIONS_Y_OFFSET
-
         cv2.putText(
             frame,
-            "Press 'Q' or ESC to skip",
-            (TEXT_INSTRUCTIONS_X, y_position),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            FONT_SIZE_INSTRUCTIONS,
-            COLOR_YELLOW,
-            LINE_THICKNESS
+            "Press Q or ESC to skip",
+            (TEXT_INSTRUCTIONS_X, self.story_info['height'] - TEXT_INSTRUCTIONS_Y_OFFSET),
+            cv2.FONT_HERSHEY_SIMPLEX, FONT_SIZE_INSTRUCTIONS, COLOR_YELLOW, LINE_THICKNESS
         )
 
-    def _play_audio_chunk(self, packet):
-        """
-        Play audio chunk from packet if available.
+    def _print_story_info(self):
+        print(f"[StoryClient] Story info:")
+        print(f"  Type: {self.story_info['type']}")
+        print(f"  {self.story_info['width']}x{self.story_info['height']} @ {self.story_info['fps']:.1f} fps")
+        print(f"  Frames: {self.story_info['total_frames']} | Audio: {self.story_info.get('has_audio')} | Compressed: {self.story_info.get('compressed')}")
 
-        Args:
-            packet: Packet dictionary containing 'audio' field
-        """
-        if self.audio_stream and packet['audio'] is not None:
-            try:
-                audio_bytes = packet['audio'].tobytes()
-                self.audio_stream.write(audio_bytes)
-            except Exception as e:
-                print(f"Audio playback error: {e}")
-
-    def _print_progress(self, frame_count):
-        """
-        Print playback progress periodically.
-
-        Args:
-            frame_count: Current frame number
-        """
-        if frame_count % FPS_RATE == MODULO_SUCCESS:
-            print(
-                f"ðŸ”’ Playing encrypted frame {frame_count}/"
-                f"{self.story_info['total_frames']}"
-            )
-
-    def _check_exit_conditions(self, window_name):
-        """
-        Check if user wants to exit or window was closed.
-
-        Args:
-            window_name: Name of OpenCV window
-
-        Returns:
-            bool: True if should exit, False otherwise
-        """
-        # Check for key press
-        key = cv2.waitKey(FRAME_DELAY_MS) & 0xFF
-        if key == KEY_ESCAPE or key == ord('q') or key == ord('Q'):
-            print("Story skipped by user")
-            return True
-
-        # Check if window closed
-        if cv2.getWindowProperty(window_name,
-                                 cv2.WND_PROP_VISIBLE) < IS_WINDOW_VISIBLE:
-            print("Window closed")
-            return True
-
-        return False
+    # ── Cleanup ────────────────────────────────────────────────────────────────
 
     def cleanup(self):
-        """
-        Release resources such as audio stream, PyAudio and socket.
-
-        Called automatically at end of playback or on error.
-        """
         if self.audio_stream:
-            self.audio_stream.stop_stream()
-            self.audio_stream.close()
+            try:
+                self.audio_stream.stop_stream()
+                self.audio_stream.close()
+            except Exception:
+                pass
         if self.pyaudio_instance:
-            self.pyaudio_instance.terminate()
+            try:
+                self.pyaudio_instance.terminate()
+            except Exception:
+                pass
         if self.socket:
-            self.socket.close()
-            print("Disconnected from server")
+            try:
+                self.socket.close()
+            except Exception:
+                pass
+        print("[StoryClient] Disconnected")
 
 
-def run_story_player_client():
-    """
-    Entry point for running the ENCRYPTED story player client.
-
-    Creates a StoryPlayer instance, connects to server, and starts playback.
-    """
-    player = StoryPlayer()
+def run_story_player_client(
+    host: str = STORY_SERVER_HOST,
+    port: int = STORY_SERVER_PORT,
+    ticket: str = "",
+):
+    """Connect to the story server with the given ticket and play the story."""
+    player = StoryPlayer(host, port, ticket=ticket)
     if player.connect():
         player.play_story()
     else:
-        print("Failed to connect to server")
+        print("[StoryClient] Failed to connect")
 
 
 if __name__ == '__main__':
-    run_story_player_client()
+    # For standalone testing provide a ticket manually
+    run_story_player_client(ticket="testtest")

@@ -1,13 +1,10 @@
 """
 Gal Haham
 Combined login and signup GUI with tabbed interface.
-Supports regular and admin user registration with secret key validation.
+Supports regular user registration.
 """
 import wx
-
-# User Roles
-USER_ROLE_REGULAR = 0
-USER_ROLE_ADMIN = 1
+import hashlib
 
 # Window Configuration
 WINDOW_WIDTH = 450
@@ -51,7 +48,7 @@ class LoginSignupFrame(wx.Frame):
 
     This frame contains two tabs:
         - Login: Allows existing users to authenticate.
-        - Signup: Allows new users to register (regular or admin).
+        - Signup: Allows new users to register.
 
     The frame communicates with the backend via a Client instance
     injected as 'client_instance'. All server interactions
@@ -59,24 +56,18 @@ class LoginSignupFrame(wx.Frame):
     """
 
     def __init__(self, client_instance):
-        """Initialize the Login/Signup window - REFACTORED."""
+        """Initialize the Login/Signup window."""
         super().__init__(
             None,
             title=WINDOW_TITLE,
             size=wx.Size(WINDOW_WIDTH, WINDOW_HEIGHT)
         )
 
-        # Initialize instance variables
         self.client = client_instance
         self.login_successful = False
 
-        # Create main panel
         panel = self._create_main_panel()
-
-        # Build UI components
         main_sizer = self._build_ui_structure(panel)
-
-        # Finalize setup
         self._finalize_setup(panel, main_sizer)
 
     def _create_main_panel(self):
@@ -88,14 +79,9 @@ class LoginSignupFrame(wx.Frame):
     def _build_ui_structure(self, panel):
         """Build the complete UI structure and return main sizer."""
         main_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        # Add title
         self._add_title(panel, main_sizer)
-
-        # Create and add notebook with tabs
         notebook = self._create_notebook(panel)
         main_sizer.Add(notebook, 1, wx.ALL | wx.EXPAND, SPACING_NOTEBOOK)
-
         return main_sizer
 
     def _add_title(self, panel, sizer):
@@ -114,28 +100,20 @@ class LoginSignupFrame(wx.Frame):
     def _create_notebook(self, panel):
         """Create notebook with login and signup tabs."""
         notebook = wx.Notebook(panel)
-
-        # Create both tabs
         login_panel = self._create_login_tab(notebook)
         signup_panel = self._create_signup_tab(notebook)
-
-        # Add tabs to notebook
         notebook.AddPage(login_panel, "Login")
         notebook.AddPage(signup_panel, "Sign Up")
-
         return notebook
 
     def _create_login_tab(self, notebook):
         """Create the login tab with all its components."""
         login_panel = wx.Panel(notebook)
         login_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        # Add login components
         self._add_login_username_field(login_panel, login_sizer)
         self._add_login_password_field(login_panel, login_sizer)
         self._add_login_button(login_panel, login_sizer)
         self._add_login_status_label(login_panel, login_sizer)
-
         login_panel.SetSizer(login_sizer)
         return login_panel
 
@@ -147,17 +125,11 @@ class LoginSignupFrame(wx.Frame):
             wx.LEFT | wx.TOP,
             SPACING_FIELD_LEFT_TOP
         )
-
         self.login_username = wx.TextCtrl(
             panel,
             size=wx.Size(FIELD_WIDTH, FIELD_HEIGHT),
         )
-        sizer.Add(
-            self.login_username,
-            0,
-            wx.ALL | wx.EXPAND,
-            SPACING_FIELD_ALL,
-        )
+        sizer.Add(self.login_username, 0, wx.ALL | wx.EXPAND, SPACING_FIELD_ALL)
 
     def _add_login_password_field(self, panel, sizer):
         """Add password field to login tab."""
@@ -167,18 +139,12 @@ class LoginSignupFrame(wx.Frame):
             wx.LEFT,
             SPACING_FIELD_LEFT
         )
-
         self.login_password = wx.TextCtrl(
             panel,
             size=wx.Size(FIELD_WIDTH, FIELD_HEIGHT),
             style=wx.TE_PASSWORD | wx.TE_PROCESS_ENTER
         )
-        sizer.Add(
-            self.login_password,
-            0,
-            wx.ALL | wx.EXPAND,
-            SPACING_FIELD_ALL,
-        )
+        sizer.Add(self.login_password, 0, wx.ALL | wx.EXPAND, SPACING_FIELD_ALL)
 
     def _add_login_button(self, panel, sizer):
         """Add login button to login tab."""
@@ -202,15 +168,10 @@ class LoginSignupFrame(wx.Frame):
         """Create the signup tab with all its components."""
         signup_panel = wx.Panel(notebook)
         signup_sizer = wx.BoxSizer(wx.VERTICAL)
-
-        # Add signup components
         self._add_signup_username_field(signup_panel, signup_sizer)
         self._add_signup_password_field(signup_panel, signup_sizer)
-        self._add_admin_checkbox(signup_panel, signup_sizer)
-        self._add_admin_secret_field(signup_panel, signup_sizer)
         self._add_signup_button(signup_panel, signup_sizer)
         self._add_signup_status_label(signup_panel, signup_sizer)
-
         signup_panel.SetSizer(signup_sizer)
         return signup_panel
 
@@ -222,17 +183,11 @@ class LoginSignupFrame(wx.Frame):
             wx.LEFT | wx.TOP,
             SPACING_FIELD_LEFT_TOP
         )
-
         self.signup_username = wx.TextCtrl(
             panel,
             size=wx.Size(FIELD_WIDTH, FIELD_HEIGHT),
         )
-        sizer.Add(
-            self.signup_username,
-            0,
-            wx.ALL | wx.EXPAND,
-            SPACING_FIELD_ALL,
-        )
+        sizer.Add(self.signup_username, 0, wx.ALL | wx.EXPAND, SPACING_FIELD_ALL)
 
     def _add_signup_password_field(self, panel, sizer):
         """Add password field to signup tab."""
@@ -242,44 +197,12 @@ class LoginSignupFrame(wx.Frame):
             wx.LEFT,
             SPACING_FIELD_LEFT
         )
-
         self.signup_password = wx.TextCtrl(
             panel,
             size=wx.Size(FIELD_WIDTH, FIELD_HEIGHT),
             style=wx.TE_PASSWORD
         )
-        sizer.Add(
-            self.signup_password,
-            0,
-            wx.ALL | wx.EXPAND,
-            SPACING_FIELD_ALL,
-        )
-
-    def _add_admin_checkbox(self, panel, sizer):
-        """Add admin checkbox to signup tab."""
-        self.admin_checkbox = wx.CheckBox(
-            panel,
-            label="Register as Manager/Admin"
-        )
-        self.admin_checkbox.Bind(wx.EVT_CHECKBOX, self.on_admin_checkbox)
-        sizer.Add(self.admin_checkbox, 0, wx.ALL, SPACING_FIELD_ALL)
-
-    def _add_admin_secret_field(self, panel, sizer):
-        """Add admin secret key field to signup tab."""
-        sizer.Add(
-            wx.StaticText(panel, label="Admin Secret Key:"),
-            0,
-            wx.LEFT,
-            SPACING_FIELD_LEFT
-        )
-
-        self.admin_secret = wx.TextCtrl(
-            panel,
-            size=wx.Size(FIELD_WIDTH, FIELD_HEIGHT),
-            style=wx.TE_PASSWORD
-        )
-        self.admin_secret.Enable(False)
-        sizer.Add(self.admin_secret, 0, wx.ALL | wx.EXPAND, SPACING_FIELD_ALL)
+        sizer.Add(self.signup_password, 0, wx.ALL | wx.EXPAND, SPACING_FIELD_ALL)
 
     def _add_signup_button(self, panel, sizer):
         """Add signup button to signup tab."""
@@ -304,40 +227,24 @@ class LoginSignupFrame(wx.Frame):
         panel.SetSizer(main_sizer)
         self.Centre()
         self.Show()
-
-        # Bind Enter key for login
         self.login_password.Bind(wx.EVT_TEXT_ENTER, self.on_login)
-
-    def on_admin_checkbox(self, event):
-        """
-        Enable/disable admin secret field based on checkbox.
-
-        Args:
-            event: wx.Event from checkbox
-        """
-        self.admin_secret.Enable(self.admin_checkbox.GetValue())
 
     def on_login(self, event):
         """
-        Handle the login process - REFACTORED.
+        Handle the login process.
 
         Args:
             event: wx.Event from button or Enter key
         """
-        # Step 1: Get and validate credentials
         credentials = self._get_login_credentials()
         if not credentials:
             return
 
-        # Step 2: Show progress
         self._show_login_progress()
-
-        # Step 3: Send login request
         response = self._send_login_request(credentials)
 
-        # Step 4: Handle response
         if response.get('status') == 'success':
-            self._handle_login_success(credentials['username'], response)
+            self._handle_login_success(credentials['username'])
         else:
             self._handle_login_failure(response)
 
@@ -350,12 +257,13 @@ class LoginSignupFrame(wx.Frame):
         """
         username = self.login_username.GetValue().strip()
         password = self.login_password.GetValue().strip()
+        hashed_pwd = hashlib.sha256(password.encode()).hexdigest()
 
         if not username or not password:
             self.login_status.SetLabel("Please enter username and password")
             return None
 
-        return {'username': username, 'password': password}
+        return {'username': username, 'password': hashed_pwd}
 
     def _show_login_progress(self):
         """Show login progress indicator."""
@@ -378,26 +286,17 @@ class LoginSignupFrame(wx.Frame):
             'password': credentials['password']
         })
 
-    def _handle_login_success(self, username, response):
+    def _handle_login_success(self, username):
         """
-        Handle successful login - REFACTORED.
+        Handle successful login.
 
         Args:
             username: Logged in username
-            response: Server response dict
         """
-        # Set username
         self.client.username = username
-
-        # Get admin status from login response
-        self.client.is_admin = response.get('is_admin', USER_ROLE_REGULAR)
-
-        # Update UI
         self.login_status.SetLabel("Login successful!")
         self.login_status.SetForegroundColour(COLOR_SUCCESS)
         self.login_successful = True
-
-        # Close window after delay
         wx.CallLater(LOGIN_CLOSE_DELAY_MS, self.Close)
 
     def _handle_login_failure(self, response):
@@ -413,27 +312,17 @@ class LoginSignupFrame(wx.Frame):
 
     def on_signup(self, event):
         """
-        Handle account creation - REFACTORED.
+        Handle account creation.
 
         Args:
             event: wx.Event from button
         """
-        # Step 1: Get and validate input
         signup_data = self._get_signup_input()
         if not signup_data:
             return
 
-        # Step 2: Validate admin requirements
-        if not self._validate_admin_requirements(signup_data):
-            return
-
-        # Step 3: Show progress indicator
         self._show_signup_progress()
-
-        # Step 4: Send signup request
         response = self._send_signup_request(signup_data)
-
-        # Step 5: Handle response
         self._handle_signup_response(response)
 
     def _get_signup_input(self):
@@ -445,40 +334,12 @@ class LoginSignupFrame(wx.Frame):
         """
         username = self.signup_username.GetValue().strip()
         password = self.signup_password.GetValue().strip()
-        is_admin = (
-            USER_ROLE_ADMIN
-            if self.admin_checkbox.GetValue()
-            else USER_ROLE_REGULAR
-        )
-
-        # Validate basic fields
+        hashed_pwd = hashlib.sha256(password.encode()).hexdigest()
         if not username or not password:
             self.signup_status.SetLabel("Please enter username and password")
             return None
 
-        return {
-            'username': username,
-            'password': password,
-            'is_admin': is_admin
-        }
-
-    def _validate_admin_requirements(self, signup_data):
-        """
-        Validate admin-specific requirements.
-
-        Args:
-            signup_data: Dict with signup information
-
-        Returns:
-            bool: True if valid, False otherwise
-        """
-        if (
-                signup_data['is_admin'] and not
-                self.admin_secret.GetValue().strip()
-        ):
-            self.signup_status.SetLabel("Admin secret key required")
-            return False
-        return True
+        return {'username': username, 'password': hashed_pwd}
 
     def _show_signup_progress(self):
         """Display progress indicator during signup."""
@@ -498,13 +359,8 @@ class LoginSignupFrame(wx.Frame):
         """
         payload = {
             'username': signup_data['username'],
-            'password': signup_data['password'],
-            'is_admin': signup_data['is_admin']
+            'password': signup_data['password']
         }
-
-        # Add admin secret if applicable
-        if signup_data['is_admin']:
-            payload['admin_secret'] = self.admin_secret.GetValue().strip()
         print("CLIENT SEND SIGNUP TO:", self.client.host, self.client.port)
         return self.client._send_request('SIGNUP', payload)
 
@@ -524,8 +380,6 @@ class LoginSignupFrame(wx.Frame):
         """Handle successful signup - update UI and clear fields."""
         self.signup_status.SetLabel("Account created! Please login.")
         self.signup_status.SetForegroundColour(COLOR_SUCCESS)
-
-        # Clear all fields
         self._clear_signup_fields()
 
     def _handle_signup_failure(self, response):
@@ -543,6 +397,3 @@ class LoginSignupFrame(wx.Frame):
         """Clear all signup form fields."""
         self.signup_username.SetValue("")
         self.signup_password.SetValue("")
-        self.admin_secret.SetValue("")
-        self.admin_checkbox.SetValue(False)
-        self.admin_secret.Enable(False)

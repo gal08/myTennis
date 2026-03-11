@@ -1,217 +1,231 @@
 """
 Gal Haham
-Client Handler
-Manages individual client streaming sessions with encryption
-FIXED: Direct socket communication WITHOUT NetworkManager dependency
-FIXED: Now uses Protocol.send() for consistency with client
-FIXED: Silent error handling for client disconnections
+Client Handler - handles a single streaming client session
+ADDED: zlib compression before encryption → smaller packets → faster transfer
+CHANGED: DEFAULT_FPS capped at 20 for better cross-network performance
+Compression pipeline: raw data → zlib.compress → AES.encrypt → send
 """
-import time
 import pickle
-import struct
+import time
+import cv2
+import subprocess
+import numpy as np
+import zlib
 import aes_cipher
-from VideoStreamManager import VideoStreamManager
-from AudioStreamManager import AudioStreamManager
 from Protocol import Protocol
 
-INITIAL_FRAME_COUNT = 0
-FRAME_INCREMENT_STEP = 1
-SOCK_INDEX = 0
+# ── Compression ───────────────────────────────────────────────────────────────
+COMPRESS_LEVEL = 1          # zlib level 1 = fastest
+
+# ── Video constants ───────────────────────────────────────────────────────────
+DEFAULT_FPS = 20.0          # Capped at 20 for reliable cross-network streaming
+MAXIMUM_FPS = 20.0          # Hard cap — prevents overwhelming slow connections
+MINIMUM_FPS = 5.0
+MINIMUM_DELAY = 0.0
+JPEG_QUALITY = 75           # Slightly lower quality = smaller packets
+LOG_INTERVAL_FRAMES = 30
+LARGE_BUFFER = 100_000_000
+BYTES_PER_SAMPLE = 2        # 16-bit PCM
+
 KEY_INDEX = 1
-STRUCT_FORMAT_LONG = "!L"
 
 
 class ClientHandler:
+    """
+    Handles one streaming client:
+      1. Sends stream_info (compressed + encrypted)
+      2. Loops: read frame → compress → encrypt → send
+    """
 
-    def __init__(self, video_path, encrypted_conn, address, client_number=0):
+    def __init__(self, video_path: str, conn: tuple, address: tuple, client_id: int):
         self.video_path = video_path
-        self.encrypted_conn = encrypted_conn
-        self.client_socket = encrypted_conn[SOCK_INDEX]
-        self.encryption_key = encrypted_conn[KEY_INDEX]
+        self.conn = conn                    # (socket, encryption_key)
         self.address = address
-        self.client_number = client_number
+        self.client_id = client_id
+        self._encryption_key = conn[KEY_INDEX]
 
-        self.video_manager = VideoStreamManager(video_path)
-        self.audio_manager = AudioStreamManager(video_path)
+    # ── Public entry point ────────────────────────────────────────────────────
 
     def handle_streaming(self):
-        try:
-            print(f"[Client #{self.client_number}] === STARTING STREAMING ===")
+        cap = self._open_capture()
+        if cap is None:
+            return
 
-            print(f"[Client #{self.client_number}] Step 1: Opening video...")
-            if not self.video_manager.open_video():
-                self._close_socket()
-                return
+        props = self._get_video_props(cap)
+        audio_info = self._get_audio_info()
+        audio_proc, samples_per_frame, chunk_bytes = self._start_audio(audio_info, props['fps'])
 
-            video_info = self.video_manager.get_video_info()
-            print(f"[Client #{self.client_number}] Video opened: {video_info['width']}x{video_info['height']}")
+        stream_info = self._build_stream_info(props, audio_info, samples_per_frame, audio_proc)
+        if not self._send_compressed_encrypted(stream_info):
+            self._cleanup(cap, audio_proc)
+            return
 
-            print(f"[Client #{self.client_number}] Step 2: Setting up audio...")
-            self.audio_manager.setup_audio_extraction(video_info['fps'])
+        print(f"[ClientHandler #{self.client_id}] Streaming {self.video_path} → {self.address} @ {props['fps']:.0f} fps")
+        self._stream_loop(cap, props, audio_proc, chunk_bytes)
+        self._cleanup(cap, audio_proc)
 
-            print(f"[Client #{self.client_number}] Step 3: Sending stream info...")
-            self._send_handshake(video_info)
+    # ── Setup helpers ─────────────────────────────────────────────────────────
 
-            print(f"[Client #{self.client_number}] Step 4: Starting frame streaming...")
-            self._stream_loop(video_info)
+    def _open_capture(self):
+        cap = cv2.VideoCapture(self.video_path)
+        if not cap.isOpened():
+            print(f"[ClientHandler #{self.client_id}] Cannot open: {self.video_path}")
+            return None
+        return cap
 
-        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError, OSError):
-            # Client disconnected - silent handling (no error messages)
-            pass
-        except Exception:
-            # Suppress all other errors silently
-            pass
-        finally:
-            self._cleanup()
-
-    def _send_handshake(self, video_info):
-        audio_info = self.audio_manager.get_audio_info()
-
-        stream_info = {
-            'fps': video_info['fps'],
-            'width': video_info['width'],
-            'height': video_info['height'],
-            'total_frames': video_info['total_frames'],
-            'audio_sample_rate': audio_info['audio_sample_rate'],
-            'audio_channels': audio_info['audio_channels'],
-            'samples_per_frame': audio_info['samples_per_frame'],
-            'has_audio': audio_info['has_audio']
+    def _get_video_props(self, cap) -> dict:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        # Clamp to [MINIMUM_FPS, MAXIMUM_FPS]
+        if not (MINIMUM_FPS <= fps <= MAXIMUM_FPS):
+            fps = DEFAULT_FPS
+        else:
+            fps = min(fps, MAXIMUM_FPS)   # also cap if video is e.g. 30/60 fps
+        return {
+            'fps': fps,
+            'width': int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+            'height': int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
+            'total_frames': int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+            'frame_delay': 1.0 / fps,
         }
 
-        print(f"[Client #{self.client_number}] Preparing to send stream info...")
-
+    def _get_audio_info(self) -> dict:
         try:
-            self._send_stream_info_encrypted(stream_info)
-            print(f"[Client #{self.client_number}] Stream info successfully sent!")
-        except Exception:
-            # Suppress send errors
-            raise
-
-        print(f"[Client #{self.client_number}] Streaming to {self.address} (ENCRYPTED)")
-        print(
-            f"[Client #{self.client_number}]    Video: {video_info['width']}x{video_info['height']} "
-            f"@ {video_info['fps']:.2f} FPS"
-        )
-        print(
-            f"[Client #{self.client_number}]    Audio: {audio_info['audio_sample_rate']} Hz, "
-            f"{audio_info['audio_channels']} ch"
-        )
-
-    def _send_stream_info_encrypted(self, stream_info: dict):
-        info_data = pickle.dumps(stream_info)
-
-        if self.encryption_key:
-            encrypted_data = aes_cipher.AESCipher.encrypt(
-                self.encryption_key,
-                info_data
+            result = subprocess.run(
+                ['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+                 '-show_entries', 'stream=sample_rate,channels',
+                 '-of', 'default=noprint_wrappers=1', self.video_path],
+                capture_output=True, text=True, check=True
             )
-        else:
-            encrypted_data = info_data
+            info = {}
+            for line in result.stdout.splitlines():
+                if '=' in line:
+                    k, v = line.split('=', 1)
+                    info[k.strip()] = v.strip()
+            return {
+                'sample_rate': int(info.get('sample_rate', 44100)),
+                'channels': int(info.get('channels', 2)),
+            }
+        except Exception:
+            return {'sample_rate': 44100, 'channels': 2}
 
-        Protocol.send_bin(encrypted_data, self.encrypted_conn)
+    def _start_audio(self, audio_info: dict, fps: float):
+        samples_per_frame = int(audio_info['sample_rate'] / fps)
+        chunk_bytes = samples_per_frame * audio_info['channels'] * BYTES_PER_SAMPLE
+        try:
+            proc = subprocess.Popen(
+                ['ffmpeg', '-i', self.video_path, '-vn',
+                 '-acodec', 'pcm_s16le',
+                 '-ar', str(audio_info['sample_rate']),
+                 '-ac', str(audio_info['channels']),
+                 '-f', 's16le', 'pipe:1'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                bufsize=LARGE_BUFFER
+            )
+            return proc, samples_per_frame, chunk_bytes
+        except Exception:
+            return None, samples_per_frame, chunk_bytes
 
-    def _send_frame_packet(self, frame, audio_chunk, frame_number):
-        packet = {
-            'frame': frame,
-            'audio': audio_chunk,
-            'frame_number': frame_number
+    def _build_stream_info(self, props, audio_info, samples_per_frame, audio_proc) -> dict:
+        return {
+            'width': props['width'],
+            'height': props['height'],
+            'fps': props['fps'],
+            'total_frames': props['total_frames'],
+            'has_audio': audio_proc is not None,
+            'audio_sample_rate': audio_info['sample_rate'],
+            'audio_channels': audio_info['channels'],
+            'samples_per_frame': samples_per_frame,
+            'compressed': True,
         }
 
-        packet_data = pickle.dumps(packet)
+    # ── Streaming loop ────────────────────────────────────────────────────────
 
-        if self.encryption_key:
-            encrypted_data = aes_cipher.AESCipher.encrypt(
-                self.encryption_key,
-                packet_data
-            )
-        else:
-            encrypted_data = packet_data
-
-        Protocol.send_bin(encrypted_data, self.encrypted_conn)
-
-    def _stream_loop(self, video_info):
-        streaming_state = self._initialize_streaming_state(video_info)
-
-        print(f"[Client #{self.client_number}] Starting frame loop...")
+    def _stream_loop(self, cap, props, audio_proc, chunk_bytes):
+        frame_count = 0
+        start_time = time.time()
 
         while True:
-            if not self._process_single_frame(streaming_state):
+            t0 = time.time()
+
+            ret, frame = cap.read()
+            if not ret:
                 break
 
-            streaming_state['frame_count'] += FRAME_INCREMENT_STEP
+            audio_chunk = self._read_audio(audio_proc, chunk_bytes)
 
-        print(f"[Client #{self.client_number}] Frame loop completed")
+            packet = {
+                'frame': frame,
+                'audio': audio_chunk,
+                'frame_number': frame_count,
+            }
 
-    def _initialize_streaming_state(self, video_info):
-        return {
-            'frame_count': INITIAL_FRAME_COUNT,
-            'start_time': time.time(),
-            'frame_delay': video_info['frame_delay'],
-            'total_frames': video_info['total_frames']
-        }
+            if not self._send_compressed_encrypted(packet):
+                break
 
-    def _process_single_frame(self, state):
-        frame_start = time.time()
+            frame_count += 1
 
-        ret, frame = self._read_video_frame()
-        if not ret:
-            self._print_stream_completion(state['frame_count'])
-            return False
+            if frame_count % LOG_INTERVAL_FRAMES == 0:
+                elapsed = time.time() - start_time
+                print(
+                    f"[ClientHandler #{self.client_id}] "
+                    f"Frame {frame_count}/{props['total_frames']} "
+                    f"({elapsed:.1f}s)"
+                )
 
-        audio_chunk = self._read_audio_chunk()
+            self._pace(t0, props['frame_delay'])
 
+        print(f"[ClientHandler #{self.client_id}] Stream finished after {frame_count} frames")
+
+    # ── Core: compress → encrypt → send ──────────────────────────────────────
+
+    def _send_compressed_encrypted(self, obj) -> bool:
         try:
-            self._send_frame_packet(frame, audio_chunk, state['frame_count'])
-        except Exception:
-            # Suppress send errors
+            raw = pickle.dumps(obj)
+            compressed = zlib.compress(raw, level=COMPRESS_LEVEL)
+            if self._encryption_key:
+                payload = aes_cipher.AESCipher.encrypt(self._encryption_key, compressed)
+            else:
+                payload = compressed
+
+            Protocol.send_bin(payload, self.conn)
+            return True
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            return False
+        except Exception as e:
+            print(f"[ClientHandler #{self.client_id}] Send error: {e}")
             return False
 
-        self._log_streaming_progress(state)
+    # ── Audio helper ──────────────────────────────────────────────────────────
 
-        self._control_frame_timing(frame_start, state['frame_delay'])
-
-        return True
-
-    def _read_video_frame(self):
-        return self.video_manager.read_frame()
-
-    def _read_audio_chunk(self):
-        return self.audio_manager.read_audio_chunk()
-
-    def _print_stream_completion(self, frame_count):
-        print(
-            f"[Client #{self.client_number}] Finished streaming to {self.address} "
-            f"({frame_count} frames)"
-        )
-
-    def _log_streaming_progress(self, state):
-        VideoStreamManager.log_progress(
-            state['frame_count'],
-            state['total_frames'],
-            state['start_time'],
-            self.address
-        )
-
-    def _control_frame_timing(self, frame_start, frame_delay):
-        VideoStreamManager.control_frame_rate(frame_start, frame_delay)
-
-    def _close_socket(self):
-        if self.client_socket:
+    def _read_audio(self, audio_proc, chunk_bytes):
+        if audio_proc and audio_proc.stdout:
             try:
-                self.client_socket.close()
+                data = audio_proc.stdout.read(chunk_bytes)
+                if data and len(data) == chunk_bytes:
+                    return np.frombuffer(data, dtype=np.int16)
             except Exception:
-                # Suppress socket close errors
                 pass
+        return None
 
-    def _cleanup(self):
+    # ── Frame-rate pacing ─────────────────────────────────────────────────────
+
+    @staticmethod
+    def _pace(frame_start: float, frame_delay: float):
+        sleep_time = frame_delay - (time.time() - frame_start)
+        if sleep_time > MINIMUM_DELAY:
+            time.sleep(sleep_time)
+
+    # ── Cleanup ───────────────────────────────────────────────────────────────
+
+    def _cleanup(self, cap, audio_proc):
         try:
-            self.video_manager.close()
+            cap.release()
         except Exception:
             pass
-
-        try:
-            self.audio_manager.close()
-        except Exception:
-            pass
-
-        self._close_socket()
+        if audio_proc:
+            try:
+                audio_proc.terminate()
+                audio_proc.wait()
+            except Exception:
+                pass

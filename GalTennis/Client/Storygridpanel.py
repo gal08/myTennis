@@ -3,6 +3,7 @@ Gal Haham
 Story grid panel for displaying story thumbnails.
 Shows images and videos in a scrollable grid layout.
 REFACTORED: Separated class, all constants added, methods split.
+FIXED: on_media_double_click now reads and passes ticket from PLAY_STORY response.
 """
 import time
 import wx
@@ -58,6 +59,7 @@ class StoryGridPanel(wx.Panel):
     - Handle story playback
 
     REFACTORED: All magic numbers replaced with constants.
+    FIXED: Ticket-based single-port story streaming.
     """
 
     def __init__(self, parent, client_ref):
@@ -252,7 +254,8 @@ class StoryGridPanel(wx.Panel):
 
     def on_media_double_click(self, media_item):
         """
-        Handle double click on story - play story.
+        Handle double click on story - request playback, receive ticket,
+        then connect to the single story server on port 6001.
 
         Args:
             media_item: Story data dictionary
@@ -261,38 +264,36 @@ class StoryGridPanel(wx.Panel):
 
         print(f"Double clicked on: {story_name}")
         print(f"Type: {media_item['type']}")
-        print(f"Full path: {media_item['path']}")
 
         try:
-            # Request server to start story playback
+            # Request server to prepare story streaming and get a ticket
             response = self._request_story_playback(story_name)
 
             if response.get('status') == 'success':
-                # Wait for server to start
-                time.sleep(TWO_SECOND_PAUSE)
-                # Launch story player
-                run_story_player_client()
+                port   = response.get('port')
+                ticket = response.get('ticket', '')
+
+                if not port or not ticket:
+                    self._show_error("Server did not return streaming info.")
+                    return
+
+                print(f"[StoryGrid] Connecting port={port} ticket={ticket}")
+                # Pass the ticket so the server knows which story to stream
+                run_story_player_client(host=SERVER_IP, port=port, ticket=ticket)
+            else:
+                self._show_error(
+                    f"Failed to play story: "
+                    f"{response.get('message', 'Unknown error')}"
+                )
 
         except Exception as e:
-            self._show_error(f"Error starting story player: \n{str(e)}")
+            self._show_error(f"Error starting story player:\n{str(e)}")
 
     def _request_story_playback(self, story_name):
-        """
-        Request server to start story playback.
-
-        Args:
-            story_name: Name of story file
-
-        Returns:
-            dict: Server response
-        """
-        request_data = json.dumps({
-            "type": 'PLAY_STORY',
-            "payload": {'filename': story_name}
+        """Send PLAY_STORY request to main server."""
+        return self.client_ref._send_request('PLAY_STORY', {
+            'filename': story_name
         })
-        Protocol.send(request_data, self.conn)
-        response_data = Protocol.recv(self.conn)
-        return response_data
 
     def _show_error(self, message):
         """

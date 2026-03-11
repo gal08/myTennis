@@ -8,6 +8,8 @@ import wx
 import time
 from Video_Player_Client import run_video_player_client
 
+DEFAULT_VIDEO_HOST = "127.0.0.1"
+
 
 class VideoInteractionFrame(wx.Frame):
     """
@@ -336,30 +338,35 @@ class VideoInteractionFrame(wx.Frame):
 
         self.comments_preview.SetValue(preview_text.strip())
 
-
     def on_play(self, event):
         """
-        Play the video with improved timing and user feedback.
-
-        Args:
-            event: wx.Event
+        Play the video - sends PLAY_VIDEO request, receives port + ticket,
+        then connects the streaming client.
         """
         print(f"Playing video: {self.video['title']}")
 
-        # Show loading dialog
         loading = wx.BusyInfo("Starting video server, please wait...")
         wx.SafeYield()
 
         try:
-            # Request server to start streaming
             response = self.client._send_request('PLAY_VIDEO', {
                 'video_title': self.video['title']
             })
 
             if response.get('status') == 'success':
-                # Wait longer for server to fully initialize
-                time.sleep(3)  # Increased from 2 to 3 seconds
-                run_video_player_client()
+                port = response.get('port')
+                ticket = response.get('ticket', '')
+
+                if not port or not ticket:
+                    wx.MessageBox(
+                        "Server did not return streaming info.",
+                        "Error",
+                        wx.OK | wx.ICON_ERROR,
+                    )
+                    return
+
+                print(f"[GUI] Connecting to video server port={port} ticket={ticket}")
+                run_video_player_client(host=DEFAULT_VIDEO_HOST, port=port, ticket=ticket)
             else:
                 wx.MessageBox(
                     f"Failed to play video: "
@@ -368,7 +375,8 @@ class VideoInteractionFrame(wx.Frame):
                     wx.OK | wx.ICON_ERROR,
                 )
         finally:
-            del loading  # Close loading dialog
+            del loading
+
     def on_like(self, event):
         """
         Toggle like status for this video.

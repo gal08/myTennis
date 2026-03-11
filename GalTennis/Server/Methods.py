@@ -2,7 +2,10 @@
 Gal Haham
 Request Methods Handler
 Centralized request routing and handling logic
-Handles video and story streaming with encryption
+REFACTORED: Both videos and stories use single-port + ticket system.
+            No more per-request port allocation.
+            Videos  → port 9999  (ensure_video_server_running)
+            Stories → port 6001  (ensure_story_server_running)
 """
 import threading
 import time
@@ -16,8 +19,8 @@ from Likes_Handler import LikesHandler
 from Comments_Handler import CommentsHandler
 from Stories_Handler import StoriesHandler
 from Manger_commands import ManagerCommands
-from Video_Player_Server import run_video_player_server
-from story_player_server import run_story_player_server
+from VideoAudioServer import ensure_video_server_running
+from story_player_server import ensure_story_server_running
 
 REQUEST_LOGIN = 'LOGIN'
 REQUEST_SIGNUP = 'SIGNUP'
@@ -68,6 +71,7 @@ STARTUP_DELAY_SECONDS = 1
 
 DEFAULT_HOST = '0.0.0.0'
 VIDEO_STREAM_PORT = 9999
+STORY_STREAM_PORT = 6001
 
 VIDEO_EXTENSIONS = ('.mp4', '.avi', '.mkv', '.mov')
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.gif')
@@ -77,101 +81,9 @@ IMAGE_SHAPE_SLICE_2D = 2
 
 ENCODING_FORMAT = 'utf-8'
 JPEG_EXTENSION = '.jpg'
-ENSURE_ASCII_DISABLED = False
 
 MEDIA_TYPE_IMAGE = 'image'
 MEDIA_TYPE_VIDEO = 'video'
-
-
-def _resize_to_thumbnail(img):
-    try:
-        height, width = img.shape[:IMAGE_SHAPE_SLICE_2D]
-
-        if height > width:
-            new_height = THUMBNAIL_MAX_SIZE
-            new_width = int(width * (THUMBNAIL_MAX_SIZE / height))
-        else:
-            new_width = THUMBNAIL_MAX_SIZE
-            new_height = int(height * (THUMBNAIL_MAX_SIZE / width))
-
-        return cv2.resize(img, (new_width, new_height))
-    except:
-        return None
-
-
-def _encode_image_to_base64(img) -> str:
-    try:
-        _, buffer = cv2.imencode(JPEG_EXTENSION, img)
-        return base64.b64encode(buffer).decode(ENCODING_FORMAT)
-    except:
-        return None
-
-
-def _extract_image_thumbnail(file_path: str):
-    try:
-        img = cv2.imread(file_path)
-        if img is None:
-            return None
-
-        resized_img = _resize_to_thumbnail(img)
-        if resized_img is None:
-            return None
-        return _encode_image_to_base64(resized_img)
-    except:
-        return None
-
-
-def _extract_video_thumbnail(file_path: str):
-    try:
-        cap = cv2.VideoCapture(file_path)
-        ret, frame = cap.read()
-        cap.release()
-
-        if not ret:
-            return None
-
-        return _encode_image_to_base64(frame)
-    except:
-        return None
-
-
-def extract_thumbnail(file_path: str, file_type: str):
-    try:
-        if file_type == MEDIA_TYPE_IMAGE:
-            return _extract_image_thumbnail(file_path)
-        elif file_type == MEDIA_TYPE_VIDEO:
-            return _extract_video_thumbnail(file_path)
-        return None
-    except:
-        return None
-
-
-def _add_video_to_list(media_data: list, filename: str, file_path: str):
-    try:
-        thumbnail = extract_thumbnail(file_path, MEDIA_TYPE_VIDEO)
-        if thumbnail:
-            media_data.append({
-                'name': filename,
-                'path': file_path,
-                'thumbnail': thumbnail,
-                'type': MEDIA_TYPE_VIDEO
-            })
-    except:
-        pass
-
-
-def _add_image_to_list(media_data: list, filename: str, file_path: str):
-    try:
-        thumbnail = extract_thumbnail(file_path, MEDIA_TYPE_IMAGE)
-        if thumbnail:
-            media_data.append({
-                'name': filename,
-                'path': file_path,
-                'thumbnail': thumbnail,
-                'type': MEDIA_TYPE_IMAGE
-            })
-    except:
-        pass
 
 
 class RequestMethodsHandler:
@@ -187,8 +99,7 @@ class RequestMethodsHandler:
         self.story_upload_server_running = False
         self.story_upload_server_thread = None
 
-        self.active_video_servers = {}
-        self.video_servers_lock = threading.Lock()
+    # ── Router ────────────────────────────────────────────────────────────────
 
     def route_request(self, request_data: dict) -> dict:
         try:
@@ -234,38 +145,109 @@ class RequestMethodsHandler:
                 return self.get_videos_display_data()
 
             if request_type == REQUEST_GET_MEDIA:
-                l1 = self.get_media_data()
-                return {
-                    "type": 'RES_GET_MEDIA',
-                    "payload": l1
-                }
+                return {"type": 'RES_GET_MEDIA', "payload": self.get_media_data()}
 
             return self._create_error_response(MESSAGE_UNKNOWN_REQUEST)
-        except:
+        except Exception:
             return self._create_error_response("Error routing request")
+
+    # ── Thumbnail helpers ─────────────────────────────────────────────────────
+
+    def _resize_to_thumbnail(self, img):
+        try:
+            height, width = img.shape[:IMAGE_SHAPE_SLICE_2D]
+            if height > width:
+                new_height = THUMBNAIL_MAX_SIZE
+                new_width = int(width * (THUMBNAIL_MAX_SIZE / height))
+            else:
+                new_width = THUMBNAIL_MAX_SIZE
+                new_height = int(height * (THUMBNAIL_MAX_SIZE / width))
+            return cv2.resize(img, (new_width, new_height))
+        except Exception:
+            return None
+
+    def _encode_image_to_base64(self, img) -> str:
+        try:
+            _, buffer = cv2.imencode(JPEG_EXTENSION, img)
+            return base64.b64encode(buffer).decode(ENCODING_FORMAT)
+        except Exception:
+            return None
+
+    def _extract_image_thumbnail(self, file_path: str):
+        try:
+            img = cv2.imread(file_path)
+            if img is None:
+                return None
+            resized = self._resize_to_thumbnail(img)
+            return self._encode_image_to_base64(resized) if resized is not None else None
+        except Exception:
+            return None
+
+    def _extract_video_thumbnail(self, file_path: str):
+        try:
+            cap = cv2.VideoCapture(file_path)
+            ret, frame = cap.read()
+            cap.release()
+            return self._encode_image_to_base64(frame) if ret else None
+        except Exception:
+            return None
+
+    def extract_thumbnail(self, file_path: str, file_type: str):
+        try:
+            if file_type == MEDIA_TYPE_IMAGE:
+                return self._extract_image_thumbnail(file_path)
+            elif file_type == MEDIA_TYPE_VIDEO:
+                return self._extract_video_thumbnail(file_path)
+            return None
+        except Exception:
+            return None
+
+    # ── Media list helpers ────────────────────────────────────────────────────
+
+    def _add_video_to_list(self, media_data: list, filename: str, file_path: str):
+        try:
+            thumbnail = self.extract_thumbnail(file_path, MEDIA_TYPE_VIDEO)
+            if thumbnail:
+                media_data.append({'name': filename, 'path': file_path,
+                                   'thumbnail': thumbnail, 'type': MEDIA_TYPE_VIDEO})
+        except Exception:
+            pass
+
+    def _add_image_to_list(self, media_data: list, filename: str, file_path: str):
+        try:
+            thumbnail = self.extract_thumbnail(file_path, MEDIA_TYPE_IMAGE)
+            if thumbnail:
+                media_data.append({'name': filename, 'path': file_path,
+                                   'thumbnail': thumbnail, 'type': MEDIA_TYPE_IMAGE})
+        except Exception:
+            pass
+
+    # ── Media data ────────────────────────────────────────────────────────────
 
     def get_media_data(self) -> list:
         try:
             media_data = []
-
             if not os.path.exists(STORY_FOLDER):
                 return media_data
 
             for file in os.listdir(STORY_FOLDER):
                 file_lower = file.lower()
                 file_path = os.path.join(STORY_FOLDER, file)
-
                 if file_lower.endswith(VIDEO_EXTENSIONS):
-                    _add_video_to_list(media_data, file, file_path)
-
+                    self._add_video_to_list(media_data, file, file_path)
                 elif file_lower.endswith(IMAGE_EXTENSIONS):
-                    _add_image_to_list(media_data, file, file_path)
-
+                    self._add_image_to_list(media_data, file, file_path)
             return media_data
-        except:
+        except Exception:
             return []
 
+    # ── Video handling ────────────────────────────────────────────────────────
+
     def handle_play_video(self, payload: dict) -> dict:
+        """
+        Returns a one-time ticket the client uses to identify which video
+        to stream. All videos share a single server on port 9999.
+        """
         try:
             video_title = payload.get(KEY_VIDEO_TITLE)
 
@@ -273,88 +255,91 @@ class RequestMethodsHandler:
                 return self._create_error_response(MESSAGE_VIDEO_NOT_PROVIDED)
 
             video_path = self._find_video_path(video_title)
-
             if not video_path:
                 return self._create_error_response(MESSAGE_VIDEO_NOT_FOUND)
 
-            print("Found video at:", video_path)
+            print(f"[Methods] Creating streaming ticket for video → {video_path}")
 
-            with self.video_servers_lock:
-                if video_title in self.active_video_servers:
-                    server_thread = self.active_video_servers[video_title]
-                    if server_thread.is_alive():
-                        print("Video server already running")
-                        return {
-                            "status": "success",
-                            "message": "Video server already running",
-                            "port": 9999
-                        }
+            result = ensure_video_server_running(video_path)
+            port   = result.get("port")
+            ticket = result.get("ticket")
 
-            def start_video_server():
-                try:
-                    print("VIDEO SERVER Starting for", video_title)
-                    run_video_player_server(video_path)
-                    print("VIDEO SERVER Finished for", video_title)
-                except:
-                    pass
-                finally:
-                    with self.video_servers_lock:
-                        if video_title in self.active_video_servers:
-                            try:
-                                del self.active_video_servers[video_title]
-                            except:
-                                pass
+            if not port or not ticket:
+                return self._create_error_response(MESSAGE_VIDEO_STREAM_FAILED)
 
-            video_thread = threading.Thread(
-                target=start_video_server,
-                daemon=True,
-                name="VideoServer-" + video_title
-            )
-            video_thread.start()
-
-            with self.video_servers_lock:
-                self.active_video_servers[video_title] = video_thread
-
-            print("Waiting for video server to initialize...")
-            time.sleep(2.5)
-
-            print("Video server started successfully")
+            print(f"[Methods] Video '{video_title}' ticket={ticket} port={port}")
             return {
-                "status": "success",
-                "message": MESSAGE_VIDEO_STREAM_STARTED,
-                "port": 9999
+                KEY_STATUS: STATUS_SUCCESS,
+                KEY_MESSAGE: MESSAGE_VIDEO_STREAM_STARTED,
+                "port": port,
+                "ticket": ticket,
             }
 
-        except:
+        except Exception as e:
+            print(f"[Methods] handle_play_video error: {e}")
             return self._create_error_response(MESSAGE_VIDEO_STREAM_FAILED)
 
+    def _find_video_path(self, video_title: str) -> str:
+        try:
+            extensions = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']
+
+            if not os.path.exists(VIDEO_FOLDER):
+                return None
+
+            for ext in extensions:
+                path = os.path.join(VIDEO_FOLDER, video_title + ext)
+                if os.path.exists(path):
+                    return path
+
+            path = os.path.join(VIDEO_FOLDER, video_title)
+            if os.path.exists(path):
+                return path
+
+            for filename in os.listdir(VIDEO_FOLDER):
+                if filename.lower().startswith(video_title.lower()):
+                    path = os.path.join(VIDEO_FOLDER, filename)
+                    if os.path.isfile(path):
+                        return path
+
+            return None
+        except Exception:
+            return None
+
+    # ── Story handling ────────────────────────────────────────────────────────
+
     def handle_play_story(self, payload: dict) -> dict:
+        """
+        Returns a one-time ticket the client uses to identify which story
+        to stream. All stories share a single server on port 6001.
+        """
         try:
             story_filename = payload.get(KEY_FILENAME)
-
             if not story_filename:
                 return self._create_error_response(MESSAGE_STORY_NOT_PROVIDED)
 
             story_path = os.path.join(STORY_FOLDER, story_filename)
-
             if not os.path.exists(story_path):
                 return self._create_error_response(MESSAGE_STORY_NOT_FOUND)
 
-            def run_story():
-                try:
-                    run_story_player_server(story_filename)
-                except:
-                    pass
+            print(f"[Methods] Creating streaming ticket for story → {story_path}")
 
-            thread = threading.Thread(
-                target=run_story,
-                daemon=True
-            )
-            thread.start()
+            result = ensure_story_server_running(story_path)
+            port   = result.get("port")
+            ticket = result.get("ticket")
 
-            return self._create_success_response(MESSAGE_STORY_STREAM_STARTED)
+            if not port or not ticket:
+                return self._create_error_response(MESSAGE_STORY_STREAM_FAILED)
 
-        except:
+            print(f"[Methods] Story '{story_filename}' ticket={ticket} port={port}")
+            return {
+                KEY_STATUS: STATUS_SUCCESS,
+                KEY_MESSAGE: MESSAGE_STORY_STREAM_STARTED,
+                "port": port,
+                "ticket": ticket,
+            }
+
+        except Exception as e:
+            print(f"[Methods] handle_play_story error: {e}")
             return self._create_error_response(MESSAGE_STORY_STREAM_FAILED)
 
     def handle_play_story_media(self, payload: dict) -> dict:
@@ -365,123 +350,70 @@ class RequestMethodsHandler:
             if not os.path.exists(story_path):
                 return self._create_error_response(MESSAGE_FILE_NOT_FOUND)
 
-            try:
-                from VideoAudioServer import VideoAudioServer
+            result = ensure_story_server_running(story_path)
+            port   = result.get("port")
+            ticket = result.get("ticket")
 
-                def start_stream_story():
-                    try:
-                        server = VideoAudioServer(
-                            story_path,
-                            host=DEFAULT_HOST,
-                            port=VIDEO_STREAM_PORT
-                        )
-                        server.start()
-                    except:
-                        pass
-
-                threading.Thread(
-                    target=start_stream_story,
-                    daemon=True
-                ).start()
-
-                return self._create_success_response(MESSAGE_STORY_STREAMING_STARTED)
-
-            except:
+            if not port or not ticket:
                 return self._create_error_response(MESSAGE_STORY_STREAM_FAILED)
 
-        except:
+            return {
+                KEY_STATUS: STATUS_SUCCESS,
+                KEY_MESSAGE: MESSAGE_STORY_STREAMING_STARTED,
+                "port": port,
+                "ticket": ticket,
+            }
+        except Exception:
             return self._create_error_response(MESSAGE_STORY_STREAM_FAILED)
 
     def get_stories_display_data(self) -> dict:
         try:
             return self._create_success_response(MESSAGE_STORIES_DISPLAYED)
-        except:
+        except Exception:
             return self._create_error_response("Error getting stories")
 
     def get_videos_display_data(self) -> dict:
         try:
             return self._create_success_response(MESSAGE_VIDEOS_DISPLAYED)
-        except:
+        except Exception:
             return self._create_error_response("Error getting videos")
+
+    # ── Story upload server ───────────────────────────────────────────────────
 
     def handle_add_story(self, payload: dict) -> dict:
         try:
             if not self.story_upload_server_running:
                 self.start_story_upload_server()
                 time.sleep(STARTUP_DELAY_SECONDS)
-
-            response = self.stories_handler.handle_request(
-                REQUEST_ADD_STORY,
-                payload
-            )
-
-            return response
-        except:
+            return self.stories_handler.handle_request(REQUEST_ADD_STORY, payload)
+        except Exception:
             return self._create_error_response("Error adding story")
+
+    def _run_story_upload_server(self):
+        try:
+            import story_saver_server
+            print("Starting Story Upload Server (port 3333)...")
+            story_saver_server.run()
+        except Exception:
+            pass
 
     def start_story_upload_server(self):
         try:
             if not self.story_upload_server_running:
-                import story_saver_server
-
-                def run_upload_server():
-                    try:
-                        print("Starting Story Upload Server (port 3333)...")
-                        story_saver_server.run()
-                    except:
-                        pass
-
                 self.story_upload_server_thread = threading.Thread(
-                    target=run_upload_server,
+                    target=self._run_story_upload_server,
                     daemon=True
                 )
                 self.story_upload_server_thread.start()
                 self.story_upload_server_running = True
                 time.sleep(0.5)
-        except:
+        except Exception:
             pass
 
-    def _find_video_path(self, video_title: str) -> str:
-        try:
-            VIDEO_EXTENSIONS = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']
-
-            if not os.path.exists(VIDEO_FOLDER):
-                return None
-
-            for ext in VIDEO_EXTENSIONS:
-                video_path = os.path.join(VIDEO_FOLDER, video_title + ext)
-                if os.path.exists(video_path):
-                    print("Found:", video_path)
-                    return video_path
-
-                video_path = os.path.join(VIDEO_FOLDER, video_title)
-                if os.path.exists(video_path):
-                    print("Found:", video_path)
-                    return video_path
-
-            try:
-                for filename in os.listdir(VIDEO_FOLDER):
-                    if filename.lower().startswith(video_title.lower()):
-                        video_path = os.path.join(VIDEO_FOLDER, filename)
-                        if os.path.isfile(video_path):
-                            print("Found (fuzzy):", video_path)
-                            return video_path
-            except:
-                pass
-
-            print("Not found:", video_title)
-            return None
-        except:
-            return None
+    # ── Response builders ─────────────────────────────────────────────────────
 
     def _create_error_response(self, message: str) -> dict:
-        try:
-            return {KEY_STATUS: STATUS_ERROR, KEY_MESSAGE: message}
-        except:
-            return {"status": "error", "message": "Error"}
+        return {KEY_STATUS: STATUS_ERROR, KEY_MESSAGE: message}
 
     def _create_success_response(self, message: str) -> dict:
-        try:
-            return {KEY_STATUS: STATUS_SUCCESS, KEY_MESSAGE: message}
-        except:
-            return {"status": "success", "message": "Success"}
+        return {KEY_STATUS: STATUS_SUCCESS, KEY_MESSAGE: message}

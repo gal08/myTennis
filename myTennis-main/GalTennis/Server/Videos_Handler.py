@@ -1,0 +1,81 @@
+"""
+Gal Haham
+Video metadata management system.
+Handles video upload registration and retrieval
+with category/difficulty validation.
+NOW USES DBManager for all database operations.
+"""
+import time
+from Db_manager import get_db_manager
+
+ALLOWED_CATEGORIES = (
+    'forehand', 'backhand', 'serve',
+    'slice', 'volley', 'smash'
+)
+ALLOWED_DIFFICULTIES = ('easy', 'medium', 'hard')
+
+
+class VideosHandler:
+
+    def __init__(self):
+        self.db = get_db_manager()
+
+    def add_video(self, payload):
+        try:
+            title = payload.get("title")
+            category = payload.get("category")
+            level = payload.get("level")
+            uploader = payload.get("uploader")
+
+            if not all([title, category, level, uploader]):
+                return {
+                    "status": "error",
+                    "message": "Missing video title, category, level, or uploader in request."
+                }
+
+            if (
+                    category not in ALLOWED_CATEGORIES or
+                    level not in ALLOWED_DIFFICULTIES
+            ):
+                return {
+                    "status": "error",
+                    "message": "Invalid category or difficulty level."
+                }
+
+            current_time = time.time()
+            return self.db.add_video(
+                title,
+                uploader,
+                category,
+                level,
+                current_time
+            )
+        except:
+            return {
+                "status": "error",
+                "message": "Error adding video"
+            }
+
+    def get_videos(self):
+        try:
+            videos = self.db.get_all_videos()
+            return {"status": "success", "videos": videos}
+        except:
+            return {
+                "status": "error",
+                "message": "Error retrieving videos"
+            }
+
+    def handle_request(self, request_type, payload):
+        try:
+            if request_type == 'ADD_VIDEO':
+                return self.add_video(payload)
+            elif request_type == 'GET_VIDEOS':
+                return self.get_videos()
+
+            return {"status": "error", "message": "Unknown video request"}
+        except:
+            return {
+                "status": "error",
+                "message": "Error handling video request"
+            }
